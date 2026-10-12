@@ -8069,7 +8069,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '307';
+  const LEDGER_BUILD = '308';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11779,8 +11779,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         let badge = mov.etiqueta === 'sem' ? '<span class="badge">SEM</span>' : '';
         badge += badgeCuotaMovimiento(mov);
         const div = document.createElement('div');
-        const enCicloTarjetaActual = esMovimientoTarjeta(mov)
-          && movimientoPerteneceCicloTarjetaActual(grupoPago, pagosTarjeta.grupos);
+        const enCicloTarjetaActual = (esMovimientoTarjeta(mov)
+          && movimientoPerteneceCicloTarjetaActual(grupoPago, pagosTarjeta.grupos))
+          || exCompraEnCicloTarjetaVigente(mov, index, ciclo.fechaInicio);
         const fueraCicloBancoVisible = movementBankFilter !== 'all'
           && !movimientoPerteneceCicloTarjetaVisible(grupoPago, movementBankFilter, pagosTarjeta.grupos);
         const fueraCicloTarjetaEnVistaGeneral = movementBankFilter === 'all'
@@ -12520,16 +12521,34 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     ciclo.numMovimientos = gastos.length;
   }
 
+  // BUILD308 · una compra pasada a S/F sigue editable mientras el ciclo de su tarjeta original esté vigente.
+  function vistaTarjetaDeMovimiento(mov) {
+    if (!mov || esMovimientoTarjeta(mov) || !mov.exTarjetaId) return mov;
+    return { ...mov, tipo: 'DS', tarjetaId: mov.exTarjetaId };
+  }
+
+  // Al pasar a S/F la compra ya no forma grupo de pago; se decide por el calendario del banco.
+  function exCompraEnCicloTarjetaVigente(mov, index, fechaInicioCiclo) {
+    if (!mov?.exTarjetaId || esMovimientoTarjeta(mov)) return false;
+    try {
+      const cal = calendariosTarjetaPorId(mov.exTarjetaId);
+      const deCompra = calendarioExactoParaFecha(fechaDeMovimiento(mov, index, fechaInicioCiclo), cal);
+      const deHoy = calendarioExactoParaFecha(new Date(), cal);
+      if (!deCompra || !deHoy) return false;
+      return String(deCompra.key || deCompra.id) === String(deHoy.key || deHoy.id);
+    } catch (e) { return false; }
+  }
+
   function openEditArchivedCardMovement(refCodificada, idx) {
     const ciclo = cicloArchivadoPorReferencia(refCodificada);
     const mov = ciclo?.movimientos?.[Number(idx)];
-    if (!ciclo || !mov || !esMovimientoTarjeta(mov)) {
+    if (!ciclo || !mov || !esMovimientoTarjeta(vistaTarjetaDeMovimiento(mov))) {
       toast('No se encontró el movimiento', true);
       return;
     }
     const pagos = contextoPagosTarjeta();
-    const grupo = grupoPagoParaMovimiento(mov, Number(idx), ciclo.fechaInicio, pagos.grupos);
-    if (!movimientoPerteneceCicloTarjetaActual(grupo, pagos.grupos)) {
+    const grupo = esMovimientoTarjeta(mov) ? grupoPagoParaMovimiento(mov, Number(idx), ciclo.fechaInicio, pagos.grupos) : null;
+    if (!movimientoPerteneceCicloTarjetaActual(grupo, pagos.grupos) && !exCompraEnCicloTarjetaVigente(mov, Number(idx), ciclo.fechaInicio)) {
       toast('Solo se editan aquí compras del ciclo bancario actual', true);
       return;
     }
@@ -12550,6 +12569,27 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>
         <div class="projected-final-tc-preview${esUsd ? ' visible' : ''}" id="editMovementUsdPreview"></div>
       </div>
+      ${(() => {
+        // BUILD308 · tipo editable. Sigue el ciclo de la tarjeta: solo cambia esta compra y el
+        // heads-up; el Disponible actual no se toca (esta deuda se jala al abrir el próximo ciclo).
+        const tipoActual = normalizarTipoMovimiento(mov.tipo);
+        const bloqueado = !!mov.planCuotasId;
+        const opcion = (valor, texto, extra = '') => `
+          <label class="edit-type-option${extra}">
+            <input type="radio" name="editArchivedType" value="${valor}" ${tipoActual === valor ? 'checked' : ''} ${bloqueado && valor !== tipoActual ? 'disabled' : ''} onchange="toggleArchivedCardType(this.value)">
+            <span>${texto}</span>
+          </label>`;
+        return `
+      <div class="modal-field">
+        <label>Tipo</label>
+        <div class="edit-type-grid">
+          ${opcion('S', 'S · Contado')}
+          ${opcion('DS', esMovimientoDSCubierto(mov) ? 'DS+C · Tarjeta cubierta' : (esMovimientoDSPropio(mov) ? 'DS+P · 2 cuotas propias' : 'DS · Tarjeta'))}
+          ${opcion('F', 'F · Fondo')}
+          ${opcion('FDS', 'F+DS · Fondo/tarjeta', ' fds')}
+        </div>
+      </div>`;
+      })()}
       <div class="modal-field">
         <label>Detalle</label>
         <input type="text" id="editArchivedCardDetail" value="${escapeHtml(mov.detalle || '')}" autocomplete="off">
@@ -12558,11 +12598,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <label>Categoría</label>
         <select id="editArchivedCardCategory">${opcionesCategoriaMovimiento(mov.categoria)}</select>
       </div>
-      <div class="modal-field">
+      <div class="modal-field" id="editArchivedCardBankRow">
         <label>Tarjeta</label>
         <select id="editArchivedCardBank">
-          <option value="interbank" ${tarjetaIdMovimiento(mov) !== 'bcp' ? 'selected' : ''}>Interbank</option>
-          <option value="bcp" ${tarjetaIdMovimiento(mov) === 'bcp' ? 'selected' : ''}>BCP</option>
+          <option value="interbank" ${tarjetaIdMovimiento(vistaTarjetaDeMovimiento(mov)) !== 'bcp' ? 'selected' : ''}>Interbank</option>
+          <option value="bcp" ${tarjetaIdMovimiento(vistaTarjetaDeMovimiento(mov)) === 'bcp' ? 'selected' : ''}>BCP</option>
         </select>
       </div>
       <div class="modal-buttons">
@@ -12571,12 +12611,19 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </div>
     `);
     updateEditMovementUsdPreview();
+    toggleArchivedCardType(normalizarTipoMovimiento(mov.tipo));
+  }
+
+  function toggleArchivedCardType(tipo) {
+    const row = document.getElementById('editArchivedCardBankRow');
+    const t = normalizarTipoMovimiento(tipo);
+    if (row) row.style.display = (t === 'DS' || t === 'FDS') ? '' : 'none';
   }
 
   function saveArchivedCardMovementEdit(refCodificada, idx) {
     const ciclo = cicloArchivadoPorReferencia(refCodificada);
     const mov = ciclo?.movimientos?.[Number(idx)];
-    if (!ciclo || !mov || !esMovimientoTarjeta(mov)) {
+    if (!ciclo || !mov || !esMovimientoTarjeta(vistaTarjetaDeMovimiento(mov))) {
       closeModal();
       toast('No se encontró el movimiento', true);
       return;
@@ -12607,7 +12654,21 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     mov.detalle = detalle;
     const categoria = normalizarCategoriaMovimiento(document.getElementById('editArchivedCardCategory')?.value);
     if (categoria) mov.categoria = categoria; else delete mov.categoria;
-    mov.tarjetaId = normalizarTarjetaId(document.getElementById('editArchivedCardBank')?.value || tarjetaIdMovimiento(mov));
+    // BUILD308 · tipo. S o F sacan la compra de la deuda (y del heads-up); DS y F+DS la mantienen.
+    const tipoElegido = document.querySelector('input[name="editArchivedType"]:checked')?.value || normalizarTipoMovimiento(mov.tipo);
+    const tipoNuevo = ['S', 'DS', 'F', 'FDS'].includes(tipoElegido) ? tipoElegido : normalizarTipoMovimiento(mov.tipo);
+    if (tipoNuevo !== normalizarTipoMovimiento(mov.tipo)) {
+      mov.tipo = tipoNuevo;
+      if (tipoNuevo !== 'DS') { delete mov.cubierto; mov.cuotaPropia = false; }
+    }
+    if (tipoNuevo === 'DS' || tipoNuevo === 'FDS') {
+      mov.tarjetaId = normalizarTarjetaId(document.getElementById('editArchivedCardBank')?.value || mov.exTarjetaId || tarjetaIdMovimiento(mov) || 'interbank');
+      delete mov.exTarjetaId;
+    } else {
+      // Recuerda de qué tarjeta venía: sigue editable mientras su ciclo bancario esté vigente.
+      if (esMovimientoTarjeta(mov) || mov.tarjetaId) mov.exTarjetaId = normalizarTarjetaId(mov.tarjetaId);
+      mov.tarjetaId = null;
+    }
     recalcularResumenCicloArchivado(ciclo);
     saveState({ markModified: true, sync: true });
     closeModal();

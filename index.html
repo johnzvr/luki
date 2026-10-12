@@ -8069,7 +8069,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '306';
+  const LEDGER_BUILD = '307';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12536,14 +12536,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const info = infoMonedaOriginalMovimiento(mov);
     const esUsd = info.moneda === 'USD' && Number(info.tipoCambio) > 0;
     const valor = esUsd ? info.montoOriginal : Number(mov.monto || 0);
+    // BUILD307 · mismo selector S/ · US$ que el editor principal.
+    editMovementCurrency = esUsd ? 'USD' : 'PEN';
+    editMovementTc = esUsd ? Number(info.tipoCambio) : null;
     openModal(`
       <h2>Editar <span class="accent">movimiento</span></h2>
       <p class="modal-sub">Compra del ciclo bancario actual · ${escapeHtml(mov.fecha || '')}</p>
       <div class="modal-field">
-        <label>${esUsd ? 'Monto original en dólares' : 'Monto en soles'}</label>
-        <input type="number" id="editArchivedCardAmount" min="0.01" step="0.01" inputmode="decimal" value="${Number(valor).toFixed(2)}">
+        <label>Monto</label>
+        <div class="projected-final-amount-wrap">
+          <button type="button" class="projected-final-currency-toggle${esUsd ? ' usd' : ''}" id="editMovementCurrencyToggle" onclick="toggleEditMovementCurrency()" aria-label="Cambiar moneda">${esUsd ? 'US$' : 'S/'}</button>
+          <input type="number" id="editMovementAmount" min="0.01" step="0.01" inputmode="decimal" value="${Number(valor).toFixed(2)}" oninput="updateEditMovementUsdPreview()" style="padding-left:68px;">
+        </div>
+        <div class="projected-final-tc-preview${esUsd ? ' visible' : ''}" id="editMovementUsdPreview"></div>
       </div>
-      ${esUsd ? `<p class="modal-sub" style="font-size:11px;margin-top:-8px;">TC guardado: ${Number(info.tipoCambio).toFixed(3)} · Luki recalculará el equivalente en soles.</p>` : ''}
       <div class="modal-field">
         <label>Detalle</label>
         <input type="text" id="editArchivedCardDetail" value="${escapeHtml(mov.detalle || '')}" autocomplete="off">
@@ -12564,6 +12570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <button class="btn-primary" onclick="saveArchivedCardMovementEdit('${refCodificada}', ${Number(idx)})">Guardar cambios</button>
       </div>
     `);
+    updateEditMovementUsdPreview();
   }
 
   function saveArchivedCardMovementEdit(refCodificada, idx) {
@@ -12574,23 +12581,30 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       toast('No se encontró el movimiento', true);
       return;
     }
-    const valor = Number(document.getElementById('editArchivedCardAmount')?.value);
+    const valor = Number(document.getElementById('editMovementAmount')?.value);
     if (!Number.isFinite(valor) || valor <= 0) {
       toast('Ingresa un monto válido', true);
       return;
     }
-    const info = infoMonedaOriginalMovimiento(mov);
-    if (info.moneda === 'USD' && Number(info.tipoCambio) > 0) {
+    const tc = Number(editMovementTc);
+    const enUsd = editMovementCurrency === 'USD' && tc > 0;
+    let detalle = String(document.getElementById('editArchivedCardDetail')?.value || '').trim();
+    if (enUsd) {
       mov.monedaOriginal = 'USD';
       mov.montoOriginal = redondearDinero(valor);
-      mov.tipoCambio = Number(info.tipoCambio);
-      mov.monto = redondearDinero(valor * Number(info.tipoCambio));
+      mov.tipoCambio = tc;
+      mov.monto = redondearDinero(valor * tc);
+      detalle = detalleConUsdActualizado(detalle, valor, tc);
     } else {
       mov.monedaOriginal = 'PEN';
       mov.montoOriginal = redondearDinero(valor);
+      mov.tipoCambio = null;
       mov.monto = redondearDinero(valor);
+      detalle = detalleSinUsd(detalle);
     }
-    mov.detalle = String(document.getElementById('editArchivedCardDetail')?.value || '').trim();
+    // El impacto presupuestal guardado sigue al monto (ver BUILD303).
+    if (Number.isFinite(Number(mov.impactoPresupuesto)) && !mov.cuotaPropia) mov.impactoPresupuesto = mov.monto;
+    mov.detalle = detalle;
     const categoria = normalizarCategoriaMovimiento(document.getElementById('editArchivedCardCategory')?.value);
     if (categoria) mov.categoria = categoria; else delete mov.categoria;
     mov.tarjetaId = normalizarTarjetaId(document.getElementById('editArchivedCardBank')?.value || tarjetaIdMovimiento(mov));

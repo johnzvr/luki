@@ -8069,7 +8069,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '304';
+  const LEDGER_BUILD = '305';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -10245,6 +10245,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const indices = new Set();
     state.log.forEach((mov, i) => {
       if (mov?.snapshot && esMovimientoProyectado(mov)) indices.add(i);
+    });
+    // BUILD305 · cualquier gasto del ciclo actual puede eliminarse: el motor recalcula
+    // los posteriores igual que al editar. Excepciones: cuotas de un plan del banco y
+    // redistribuciones antiguas (estas siguen limitadas a las recientes, abajo).
+    state.log.forEach((mov, i) => {
+      if (!mov?.snapshot || mov.etiqueta === 'recalcula') return;
+      if (mov.planCuotasId && !esMovimientoCuotasPropias(mov)) return;
+      indices.add(i);
     });
     let recientes = 0;
     for (let i = state.log.length - 1; i >= 0 && recientes < 10; i--) {
@@ -18144,7 +18152,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       toast(
         mov?.planCuotasId && !esMovimientoCuotasPropias(mov)
           ? 'Esta cuota pertenece a un plan del banco y no se elimina como movimiento suelto'
-          : 'Solo puedes eliminar los últimos 10 movimientos',
+          : 'Este movimiento no se puede eliminar',
         true
       );
       return;
@@ -18170,7 +18178,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function doDelete(idx, restoreProjectedOnUndo = false) {
     if (!getDeletableMovementIndices().includes(idx)) {
       closeModal();
-      toast('Solo puedes eliminar los últimos 10 movimientos', true);
+      toast('Este movimiento no se puede eliminar', true);
       return;
     }
     const eraUltimo = idx === state.log.length - 1;
@@ -18316,7 +18324,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <span class="help-item-chip MOD">2×</span>
           <span class="help-item-title">Editar o eliminar</span>
         </div>
-        <div class="help-item-desc">Doble tap en un movimiento → Editar o Eliminar. Monto, tipo y eliminación están disponibles para los últimos 10 movimientos. La categoría puede cambiarse en cualquier gasto del ciclo porque no altera los cálculos.</div>
+        <div class="help-item-desc">Doble tap en un movimiento → Editar o Eliminar. Puedes eliminar cualquier gasto del ciclo; Luki recalcula los posteriores. Monto y tipo se editan en los últimos 10 movimientos (y en cualquier compra del ciclo de tarjeta vigente). La categoría puede cambiarse en cualquier gasto del ciclo porque no altera los cálculos.</div>
       </div>
       <div class="help-item">
         <div class="help-item-head">

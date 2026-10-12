@@ -8069,7 +8069,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '309';
+  const LEDGER_BUILD = '310';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12559,7 +12559,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function compraIncluidaEnDeudaInicial(mov, idx, ciclo) {
-    const deuda = state.deudaInicioCiclo;
+    return compraIncluidaEnDeudaInicialDe(mov, idx, ciclo?.fechaInicio, state.deudaInicioCiclo, state.fechaInicioCiclo, !!ciclo);
+  }
+
+  // Versión con parámetros (también la usa el Excel para ciclos archivados).
+  function compraIncluidaEnDeudaInicialDe(mov, idx, fechaInicioOrigen, deuda, fechaInicioReferencia, hayCiclo = true) {
+    const ciclo = hayCiclo ? { fechaInicio: fechaInicioOrigen } : null;
     if (!mov || !ciclo || !deuda || !(Number(deuda.totalSoles) > 0)) return false;
     const vista = vistaTarjetaDeMovimiento(mov);
     if (!esMovimientoTarjeta(vista)) return false;
@@ -12567,7 +12572,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const fecha = fechaDeMovimiento(vista, idx, ciclo.fechaInicio);
     if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) return false;
     // Debe existir antes de abrir este ciclo de sueldo.
-    if (state.fechaInicioCiclo && fecha >= inicioDelDia(state.fechaInicioCiclo)) return false;
+    if (fechaInicioReferencia && fecha >= inicioDelDia(fechaInicioReferencia)) return false;
     // Un estado ya pagado nunca formó parte de la deuda pendiente.
     if (fechaPerteneceACicloPagado(fecha, tarjetaId)) return false;
     try {
@@ -15987,15 +15992,23 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return 'Ajuste interno';
   }
 
+  // BUILD310 · Excel no maneja zonas horarias: ExcelJS escribe en UTC y una compra de las
+  // 9 p. m. en Lima aparecía al día siguiente. Se exporta la hora local tal cual.
+  function fechaLocalParaExcel(fecha) {
+    const d = fecha instanceof Date ? fecha : new Date(fecha);
+    if (Number.isNaN(d.getTime())) return fecha;
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  }
+
   function fechaReporteMovimiento(mov) {
     const timestamp = Number(mov?.timestamp);
     if (Number.isFinite(timestamp) && timestamp > 0) {
       const fecha = new Date(timestamp);
-      if (!Number.isNaN(fecha.getTime())) return fecha;
+      if (!Number.isNaN(fecha.getTime())) return fechaLocalParaExcel(fecha);
     }
     if (mov?.fechaISO) {
       const fecha = new Date(mov.fechaISO);
-      if (!Number.isNaN(fecha.getTime())) return fecha;
+      if (!Number.isNaN(fecha.getTime())) return fechaLocalParaExcel(fecha);
     }
     return mov?.fecha || '';
   }
@@ -16192,10 +16205,192 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     });
   }
 
+  // ============ BUILD310 · CONCILIACIÓN DE TARJETAS EN EL EXCEL ============
+  function estadoPagoGrupo(grupo) {
+    if (!grupo || grupo.sintetico) return 'Pendiente';
+    return (pagoPendienteParaGrupo(grupo) || cicloTarjetaPagadoParaGrupo(grupo)) ? 'Pagado' : 'Pendiente';
+  }
+
+  function etiquetaCicloTarjetaReporte(grupo) {
+    if (!grupo) return '';
+    const banco = nombreTarjeta(grupo.tarjetaId);
+    if (grupo.pendiente || !grupo.cierre) return `${banco} · desde ${etiquetaPagoCorta(grupo.inicio)} · fechas por confirmar`;
+    return `${banco} · ${etiquetaPagoCorta(grupo.inicio)} – ${etiquetaPagoCorta(grupo.cierre)}${grupo.pago ? ` · paga ${etiquetaPagoCorta(grupo.pago)}` : ''}`;
+  }
+
+  // Ciclos bancarios que se cruzan con el periodo del reporte, o cuyo pago cae dentro de él.
+  function gruposTarjetaParaReporte(inicioReporte, finReporte) {
+    const ini = inicioDelDia(inicioReporte);
+    const fin = finDelDia(finReporte);
+    return gruposPagoTarjetas(true).filter(g => {
+      if (!g || !Array.isArray(g.movimientos) || !g.movimientos.length) return false;
+      const gIni = g.inicio ? new Date(g.inicio) : null;
+      const gFin = g.cierre ? finDelDia(g.cierre) : new Date(8640000000000000);
+      const cruza = gIni && gIni <= fin && gFin >= ini;
+      const pagoDentro = g.pago && new Date(g.pago) >= ini && new Date(g.pago) <= fin;
+      return cruza || pagoDentro;
+    }).sort((a, b) => (normalizarTarjetaId(a.tarjetaId) === normalizarTarjetaId(b.tarjetaId)
+      ? (a.inicio?.getTime?.() || 0) - (b.inicio?.getTime?.() || 0)
+      : (normalizarTarjetaId(a.tarjetaId) === 'interbank' ? -1 : 1)));
+  }
+
+  function mapaCicloTarjetaPorMovimiento() {
+    const mapa = new Map();
+    gruposPagoTarjetas(true).forEach(g => (g.movimientos || []).forEach(e => mapa.set(e.mov, g)));
+    return mapa;
+  }
+
+  function cicloTarjetaDeMovimientoReporte(mov, index, fechaInicioRef, mapa, grupos) {
+    if (!esMovimientoTarjeta(mov)) return null;
+    if (mapa.has(mov)) return mapa.get(mov);
+    try {
+      const fecha = fechaDeMovimiento(mov, index, fechaInicioRef);
+      const id = tarjetaIdMovimiento(mov);
+      const cal = calendarioExactoParaFecha(fecha, calendariosTarjetaPorId(id));
+      if (!cal) return null;
+      const key = `${id}:${cal.pendiente ? (cal.key || `pendiente-${fechaParaInput(cal.inicio)}`) : `exacto-${cal.id}`}`;
+      return grupos.find(g => g.key === key) || null;
+    } catch (e) { return null; }
+  }
+
+  function addExcelCardsSheet(workbook, { inicioReporte, finReporte, deudaInicio }) {
+    const sheet = workbook.addWorksheet('Tarjetas', {
+      views: [{ showGridLines: false }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+    });
+    const widths = [20, 30, 12, 22, 9, 15, 9, 15, 15, 14];
+    sheet.columns = widths.map(width => ({ width }));
+    sheet.mergeCells('A1:J1');
+    sheet.getCell('A1').value = 'LUKI · TARJETAS';
+    sheet.getCell('A1').font = { name: 'Aptos', size: 20, bold: true, color: { argb: EXCEL_PALETTE.white } };
+    styleExcelRange(sheet, 1, 1, 1, 10, { fill: excelFill(EXCEL_PALETTE.ink) });
+    sheet.getRow(1).height = 32;
+    sheet.mergeCells('A2:J2');
+    sheet.getCell('A2').value = 'Ciclos bancarios que se cruzan con este periodo · incluye compras del ciclo de sueldo anterior · sin proyectados';
+    sheet.getCell('A2').font = { name: 'Aptos', size: 10, color: { argb: EXCEL_PALETTE.muted } };
+    styleExcelRange(sheet, 2, 1, 2, 10, { fill: excelFill(EXCEL_PALETTE.cream) });
+
+    const grupos = gruposTarjetaParaReporte(inicioReporte, finReporte);
+    const inicioRep = inicioDelDia(inicioReporte);
+    let row = 4;
+    if (!grupos.length) {
+      sheet.getCell(`A${row}`).value = 'Sin compras con tarjeta en este periodo.';
+      sheet.getCell(`A${row}`).font = { name: 'Aptos', size: 11, color: { argb: EXCEL_PALETTE.muted } };
+      return;
+    }
+    const money = '"S/" #,##0.00';
+    const usd = '"US$" #,##0.00';
+    grupos.forEach(grupo => {
+      const id = normalizarTarjetaId(grupo.tarjetaId);
+      const bankFill = id === 'bcp' ? 'FF0030B3' : 'FF05BE50';
+      const monedas = resumenMonedasGrupoTarjeta(grupo);
+      const entradas = (grupo.movimientos || []).slice().sort((a, b) =>
+        fechaDeMovimiento(a.mov, a.index, a.fechaInicioReferencia) - fechaDeMovimiento(b.mov, b.index, b.fechaInicioReferencia));
+      const solesDeUsd = redondearDinero(entradas.reduce((t, e) => t + (infoMonedaOriginalMovimiento(e.mov).moneda === 'USD' ? (Number(e.mov.monto) || 0) : 0), 0));
+      const tcProm = monedas.dolares > 0 ? solesDeUsd / monedas.dolares : null;
+
+      // Cabecera del bloque
+      sheet.mergeCells(`A${row}:J${row}`);
+      sheet.getCell(`A${row}`).value = `${nombreTarjeta(id).toUpperCase()} · ${grupo.pendiente || !grupo.cierre ? `desde ${etiquetaPagoCorta(grupo.inicio)} (fechas por confirmar)` : `${etiquetaPagoCorta(grupo.inicio)} – ${etiquetaPagoCorta(grupo.cierre)}`}`;
+      sheet.getCell(`A${row}`).font = { name: 'Aptos', size: 13, bold: true, color: { argb: EXCEL_PALETTE.white } };
+      styleExcelRange(sheet, row, 1, row, 10, { fill: excelFill(bankFill) });
+      sheet.getRow(row).height = 26;
+      row++;
+      const cab = [
+        ['Fecha de pago', grupo.pago ? fechaLocalParaExcel(grupo.pago) : 'Por confirmar', grupo.pago ? 'dd-mmm-yyyy' : null],
+        ['Estado', estadoPagoGrupo(grupo), null],
+        ['Total soles', monedas.soles, money],
+        ['Total dólares', monedas.dolares, usd],
+        ['Total convertido a soles', monedas.totalSoles, money]
+      ];
+      cab.forEach(([label, value, fmtCell]) => {
+        sheet.mergeCells(`A${row}:B${row}`);
+        sheet.mergeCells(`C${row}:E${row}`);
+        sheet.getCell(`A${row}`).value = label;
+        const c = sheet.getCell(`C${row}`);
+        c.value = value;
+        if (fmtCell) c.numFmt = fmtCell;
+        styleExcelRange(sheet, row, 1, row, 10, { fill: excelFill(EXCEL_PALETTE.paleGray), font: { name: 'Aptos', size: 10, color: { argb: EXCEL_PALETTE.ink } } });
+        sheet.getCell(`A${row}`).font = { name: 'Aptos', size: 10, bold: true, color: { argb: EXCEL_PALETTE.muted } };
+        c.font = { name: 'Aptos', size: 10, bold: true, color: { argb: label === 'Estado' && value === 'Pagado' ? 'FF2E7D32' : EXCEL_PALETTE.ink } };
+        c.alignment = { horizontal: 'left', vertical: 'middle' };
+        if (label === 'Total convertido a soles') {
+          sheet.mergeCells(`F${row}:J${row}`);
+          sheet.getCell(`F${row}`).value = monedas.dolares > 0
+            ? `US$ convertidos con el TC de cada compra (promedio ${tcProm.toFixed(3)})`
+            : 'Sin compras en dólares';
+          sheet.getCell(`F${row}`).font = { name: 'Aptos', size: 9, color: { argb: EXCEL_PALETTE.muted } };
+        }
+        row++;
+      });
+
+      // Tabla de movimientos
+      const headers = ['Fecha', 'Detalle', 'Tipo', 'Categoría', 'Moneda', 'Monto original', 'TC', 'Monto S/', 'Ciclo de sueldo', 'En deuda inicial'];
+      headers.forEach((h, i) => {
+        const cell = sheet.getCell(row, i + 1);
+        cell.value = h;
+        cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: EXCEL_PALETTE.white } };
+        cell.fill = excelFill(EXCEL_PALETTE.ink);
+        cell.alignment = { vertical: 'middle', horizontal: i >= 4 && i <= 7 ? 'right' : 'left' };
+      });
+      row++;
+      entradas.forEach(({ mov, index, fechaInicioReferencia }) => {
+        const info = infoMonedaOriginalMovimiento(mov);
+        const enUsd = info.moneda === 'USD';
+        const fecha = fechaDeMovimiento(mov, index, fechaInicioReferencia);
+        const iniOrigen = fechaInicioReferencia ? inicioDelDia(fechaInicioReferencia) : null;
+        const cicloSueldo = !iniOrigen ? '—'
+          : (iniOrigen.getTime() === inicioRep.getTime() ? 'Actual' : (iniOrigen < inicioRep ? 'Anterior' : 'Posterior'));
+        let incluida = false;
+        try { incluida = compraIncluidaEnDeudaInicialDe(mov, index, fechaInicioReferencia, deudaInicio, inicioReporte, cicloSueldo === 'Anterior'); } catch (e) {}
+        const r = sheet.getRow(row);
+        r.values = [
+          fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fechaLocalParaExcel(fecha) : fecha,
+          detalleReporteMovimiento(mov),
+          etiquetaTipoMovimiento(mov),
+          categoriaMovimiento(mov) || 'Sin categoría',
+          enUsd ? 'US$' : 'S/',
+          enUsd ? Number(info.montoOriginal) || 0 : Number(mov.monto) || 0,
+          enUsd && Number(info.tipoCambio) > 0 ? Number(info.tipoCambio) : '',
+          Number(mov.monto) || 0,
+          cicloSueldo,
+          incluida ? 'Sí' : 'No'
+        ];
+        r.eachCell({ includeEmpty: true }, cell => {
+          cell.font = { name: 'Aptos', size: 10, color: { argb: EXCEL_PALETTE.ink } };
+          cell.border = { bottom: { style: 'thin', color: { argb: EXCEL_PALETTE.line } } };
+          cell.alignment = { vertical: 'middle', horizontal: 'left' };
+        });
+        if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) r.getCell(1).numFmt = 'dd-mmm-yyyy hh:mm';
+        r.getCell(6).numFmt = enUsd ? usd : money;
+        r.getCell(7).numFmt = '0.000';
+        r.getCell(8).numFmt = money;
+        [5, 6, 7, 8].forEach(c => { r.getCell(c).alignment = { vertical: 'middle', horizontal: 'right' }; });
+        if (cicloSueldo === 'Anterior') [1, 2, 9].forEach(c => { r.getCell(c).fill = excelFill(EXCEL_PALETTE.paleBlue); });
+        row++;
+      });
+      // Subtotales
+      [['Subtotal soles', monedas.soles, money], ['Subtotal dólares', monedas.dolares, usd], ['Total S/ (soles + dólares convertidos)', monedas.totalSoles, money]].forEach(([label, value, f], i) => {
+        sheet.mergeCells(`A${row}:E${row}`);
+        sheet.getCell(`A${row}`).value = label;
+        sheet.mergeCells(`F${row}:H${row}`);
+        sheet.getCell(`F${row}`).value = value;
+        sheet.getCell(`F${row}`).numFmt = f;
+        styleExcelRange(sheet, row, 1, row, 10, {
+          fill: excelFill(i === 2 ? EXCEL_PALETTE.cream : EXCEL_PALETTE.paleGray),
+          font: { name: 'Aptos', size: 10, bold: true, color: { argb: EXCEL_PALETTE.ink } }
+        });
+        sheet.getCell(`F${row}`).alignment = { horizontal: 'right', vertical: 'middle' };
+        row++;
+      });
+      row += 2;
+    });
+  }
+
   // BUILD295 · Inicio − Gastado = Quedó − Meta de ahorro = Gastable.
   // gastableApp (ciclo actual) es exactamente el Gastable de Inicio; si el saldo se
   // corrigió a mano y la cadena no cuadra, una línea de ajuste explica la diferencia.
-  function addExcelGastableBreakdown(sheet, startRow, { inicio, gastado, metaAhorro, gastableApp }) {
+  function addExcelGastableBreakdown(sheet, startRow, { inicio, gastado, metaAhorro, gastableApp, prefijo = [] }) {
     const inicioValido = Number.isFinite(Number(inicio)) && inicio !== null;
     const gastadoValor = redondearDinero(Number(gastado) || 0);
     const metaValor = Number.isFinite(Number(metaAhorro)) && metaAhorro !== null
@@ -16214,7 +16409,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const metaExcedida = cadena !== null && cadena < 0 ? redondearDinero(Math.abs(cadena)) : 0;
 
     const lineas = [
-      { label: 'Inicio del ciclo', value: inicioValido ? redondearDinero(Number(inicio)) : 'No registrado' },
+      // BUILD310 · cómo se formó el inicio: saldos − Fondo − deuda pendiente inicial.
+      ...prefijo,
+      { label: prefijo.length ? '= Inicio del ciclo' : 'Inicio del ciclo', value: inicioValido ? redondearDinero(Number(inicio)) : 'No registrado', subtotal: prefijo.length > 0 },
       { label: '− Gastado', value: -gastadoValor },
       { label: '= Quedó', value: quedo === null ? '—' : quedo, subtotal: true }
     ];
@@ -16251,6 +16448,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       valueCell.alignment = { vertical: 'middle', horizontal: 'right' };
       sheet.getRow(row).height = linea.total ? 26 : 22;
     });
+    return startRow + 1 + lineas.length; // primera fila libre
   }
 
   async function construirReporteExcel({
@@ -16261,7 +16459,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     fondoInicialCiclo = null,
     fondoFinalCiclo = null,
     metaAhorro = null,
-    gastableApp = null
+    gastableApp = null,
+    inicioReporte = null,
+    finReporte = null,
+    cuentasInicio = null,
+    deudaInicio = null
   }) {
     if (!window.ExcelJS?.Workbook) throw new Error('ExcelJS no disponible');
 
@@ -16275,6 +16477,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     workbook.modified = new Date();
 
     const resumen = resumenReporteMovimientos(movimientos);
+    // BUILD310 · un proyectado no es deuda: no suma a «Deuda generada».
+    resumen.deudaGenerada = redondearDinero((Array.isArray(movimientos) ? movimientos : [])
+      .filter(m => m && m.etiqueta !== 'recalcula' && !esMovimientoProyectado(m) && esMovimientoTarjeta(m))
+      .reduce((t, m) => t + (Number(m.monto) || 0), 0));
     const saldoInicialReporte = Number.isFinite(Number(saldoInicialCiclo))
       ? Number(saldoInicialCiclo)
       : null;
@@ -16343,13 +16549,79 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     addExcelMetricCard(summary, ['D13:F13', 'D14:F15'], 'MOVIMIENTOS', resumen.movimientos, EXCEL_PALETTE.cream, false);
 
     // BUILD295 · Del inicio al Gastable: termina en el mismo Gastable que muestra Inicio.
-    addExcelGastableBreakdown(summary, 17, {
+    // BUILD310 · cadena completa del inicio y deuda inicial.
+    const ajustesDeuda = Array.isArray(deudaInicio?.ajustesPosteriores) ? deudaInicio.ajustesPosteriores : [];
+    const netoAjDeuda = redondearDinero(ajustesDeuda.reduce((t, a) => t + (Number(a?.deuda) || 0), 0));
+    const netoAjDisp = redondearDinero(ajustesDeuda.reduce((t, a) => t + (Number(a?.disponible) || 0), 0));
+    const deudaIngresada = deudaInicio && Number.isFinite(Number(deudaInicio.totalSoles))
+      ? redondearDinero(Number(deudaInicio.totalSoles) - netoAjDeuda) : null;
+    const prefijo = [];
+    if (cuentasInicio && Number.isFinite(Number(cuentasInicio.totalGeneral))) {
+      const saldos = redondearDinero(Number(cuentasInicio.totalGeneral) || 0);
+      const fondo = redondearDinero(Number(cuentasInicio.fondo) || 0);
+      const deuda = deudaIngresada !== null ? deudaIngresada : redondearDinero(Number(cuentasInicio.deudaPendienteAplicada) || 0);
+      prefijo.push({ label: 'Saldos en cuentas', value: saldos });
+      prefijo.push({ label: '− Fondo', value: -fondo });
+      prefijo.push({ label: '− Deuda pendiente inicial', value: -deuda });
+      const inicioOriginal = Number.isFinite(Number(cuentasInicio.disponible)) ? Number(cuentasInicio.disponible) : null;
+      const otros = inicioOriginal === null ? 0 : redondearDinero(inicioOriginal - (saldos - fondo - deuda));
+      if (Math.abs(otros) >= 0.005) prefijo.push({ label: '± Otros ajustes de apertura', value: otros });
+      if (Math.abs(netoAjDisp) >= 0.005) prefijo.push({ label: '± Correcciones de compras jaladas', value: netoAjDisp });
+    }
+    let nextRow = addExcelGastableBreakdown(summary, 17, {
       inicio: saldoInicialReporte,
       gastado: resumen.gastoDisponible,
       metaAhorro,
-      gastableApp
+      gastableApp,
+      prefijo
     });
-    const R = 7; // filas que ocupa la sección anterior; todo lo de abajo baja R filas.
+
+    // Deuda pendiente inicial y deuda de tarjetas por pagar
+    const lineaSimple = (label, value, opts = {}) => {
+      summary.mergeCells(`A${nextRow}:D${nextRow}`);
+      summary.mergeCells(`E${nextRow}:F${nextRow}`);
+      summary.getCell(`A${nextRow}`).value = label;
+      summary.getCell(`E${nextRow}`).value = value;
+      if (typeof value === 'number') summary.getCell(`E${nextRow}`).numFmt = opts.fmt || '"S/" #,##0.00;-"S/" #,##0.00';
+      styleExcelRange(summary, nextRow, 1, nextRow, 6, {
+        fill: excelFill(opts.fill || EXCEL_PALETTE.paleGray), border: excelBorder(EXCEL_PALETTE.bg),
+        font: { name: 'Aptos', size: 10, bold: !!opts.bold, color: { argb: EXCEL_PALETTE.ink } }, alignment: { vertical: 'middle' }
+      });
+      summary.getCell(`E${nextRow}`).alignment = { vertical: 'middle', horizontal: 'right' };
+      summary.getRow(nextRow).height = 22;
+      nextRow++;
+    };
+    const titulo = text => {
+      nextRow++;
+      summary.mergeCells(`A${nextRow}:F${nextRow}`);
+      summary.getCell(`A${nextRow}`).value = text;
+      summary.getCell(`A${nextRow}`).font = { name: 'Aptos', size: 13, bold: true, color: { argb: EXCEL_PALETTE.ink } };
+      summary.getRow(nextRow).height = 24;
+      nextRow++;
+    };
+    if (deudaIngresada !== null) {
+      titulo('DEUDA PENDIENTE INICIAL');
+      lineaSimple('Deuda pendiente inicial (ingresada al abrir el ciclo)', deudaIngresada, { bold: true });
+      if (Math.abs(netoAjDeuda) >= 0.005) {
+        lineaSimple(`Ajustes a deuda inicial (${ajustesDeuda.length} corrección${ajustesDeuda.length === 1 ? '' : 'es'})`, netoAjDeuda);
+        lineaSimple('Deuda inicial corregida', redondearDinero(deudaIngresada + netoAjDeuda), { bold: true, fill: EXCEL_PALETTE.cream });
+      }
+    }
+    const porPagar = gruposPagoTarjetas(true).filter(g => estadoPagoGrupo(g) === 'Pendiente' && Number(g.total) > 0.004)
+      .sort((a, b) => (a.pago?.getTime?.() || 9e15) - (b.pago?.getTime?.() || 9e15));
+    titulo('DEUDA DE TARJETAS POR PAGAR');
+    if (!porPagar.length) {
+      lineaSimple('Sin deuda de tarjeta pendiente', 0);
+    } else {
+      porPagar.forEach(g => {
+        const m = resumenMonedasGrupoTarjeta(g);
+        const pago = g.pago ? `paga ${fechaPagoSinAnio(g.pago)}` : 'fecha de pago por confirmar';
+        lineaSimple(`${etiquetaCicloTarjetaReporte(g).split(' · paga')[0]} · ${pago}${m.dolares > 0 ? ` · S/ ${fmt(m.soles)} + US$ ${fmt(m.dolares)}` : ''}`, m.totalSoles);
+      });
+      lineaSimple('Total por pagar', redondearDinero(porPagar.reduce((t, g) => t + (Number(g.total) || 0), 0)), { bold: true, fill: EXCEL_PALETTE.cream });
+    }
+    nextRow++;
+    const R = nextRow - 17; // todo lo de abajo baja R filas.
 
     summary.mergeCells(`A${17 + R}:F${17 + R}`);
     summary.getCell(`A${17 + R}`).value = 'GASTOS POR TIPO';
@@ -16539,27 +16811,31 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     sheet.columns = [
       { key: 'fecha', width: 22 }, { key: 'tipo', width: 12 }, { key: 'tarjeta', width: 14 },
       { key: 'detalle', width: 30 }, { key: 'categoria', width: 24 }, { key: 'etiqueta', width: 16 },
-      { key: 'impacto', width: 24 }, { key: 'original', width: 20 }, { key: 'monto', width: 18 }, { key: 'cuota', width: 18 }
+      { key: 'impacto', width: 24 }, { key: 'original', width: 20 }, { key: 'monto', width: 18 }, { key: 'cuota', width: 18 },
+      { key: 'cicloTarjeta', width: 40 }
     ];
-    sheet.mergeCells('A1:J1');
+    const mapaCiclos = mapaCicloTarjetaPorMovimiento();
+    const gruposTodos = gruposPagoTarjetas(true);
+    const fechaInicioMovs = inicioReporte || state.fechaInicioCiclo;
+    sheet.mergeCells('A1:K1');
     sheet.getCell('A1').value = 'LUKI · MOVIMIENTOS';
     sheet.getCell('A1').font = { name: 'Aptos', size: 20, bold: true, color: { argb: EXCEL_PALETTE.white } };
     sheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
-    styleExcelRange(sheet, 1, 1, 1, 10, { fill: excelFill(EXCEL_PALETTE.ink) });
+    styleExcelRange(sheet, 1, 1, 1, 11, { fill: excelFill(EXCEL_PALETTE.ink) });
     sheet.getRow(1).height = 32;
-    sheet.mergeCells('A2:J2');
+    sheet.mergeCells('A2:K2');
     sheet.getCell('A2').value = `${periodo} · ${resumen.movimientos} movimientos reales`;
     sheet.getCell('A2').font = { name: 'Aptos', size: 10, color: { argb: EXCEL_PALETTE.muted } };
     sheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'left' };
-    styleExcelRange(sheet, 2, 1, 2, 10, { fill: excelFill(EXCEL_PALETTE.cream) });
+    styleExcelRange(sheet, 2, 1, 2, 11, { fill: excelFill(EXCEL_PALETTE.cream) });
 
-    const headers = ['Fecha', 'Tipo', 'Tarjeta', 'Detalle', 'Categoría', 'Etiqueta', 'Impacto', 'USD / TC', 'Monto', 'Cuota'];
+    const headers = ['Fecha', 'Tipo', 'Tarjeta', 'Detalle', 'Categoría', 'Etiqueta', 'Impacto', 'USD / TC', 'Monto', 'Cuota', 'Ciclo tarjeta'];
     headers.forEach((header, index) => {
       const cell = sheet.getCell(4, index + 1);
       cell.value = header;
       cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: EXCEL_PALETTE.white } };
       cell.fill = excelFill(EXCEL_PALETTE.ink);
-      cell.alignment = { vertical: 'middle', horizontal: (index === 1 || index === 2 || index >= 7) ? 'center' : 'left' };
+      cell.alignment = { vertical: 'middle', horizontal: (index === 1 || index === 2 || (index >= 7 && index <= 9)) ? 'center' : 'left' };
       cell.border = excelBorder(EXCEL_PALETTE.bg);
     });
     sheet.getRow(4).height = 25;
@@ -16589,7 +16865,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         impactoReporteMovimiento(mov),
         ajuste ? '' : monedaOriginalReporteMovimiento(mov),
         Number(mov?.monto) || 0,
-        cuotaReporteMovimiento(mov)
+        cuotaReporteMovimiento(mov),
+        (ajuste || esMovimientoProyectado(mov) || !esMovimientoTarjeta(mov))
+          ? ''
+          : etiquetaCicloTarjetaReporte(cicloTarjetaDeMovimientoReporte(mov, index, fechaInicioMovs, mapaCiclos, gruposTodos))
       ];
       row.height = 23;
       row.eachCell({ includeEmpty: true }, cell => {
@@ -16646,7 +16925,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       }
     }
 
-    sheet.autoFilter = { from: 'A4', to: `J${lastRow}` };
+    sheet.autoFilter = { from: 'A4', to: `K${lastRow}` };
+
+    // BUILD310 · hoja de conciliación por banco y ciclo bancario.
+    if (inicioReporte && finReporte) {
+      try { addExcelCardsSheet(workbook, { inicioReporte, finReporte, deudaInicio }); }
+      catch (e) { console.error('[Luki] Hoja Tarjetas:', e); }
+    }
 
     // ================================================================
     // DESGLOSE POR CATEGORÍA · BLOQUES
@@ -17046,7 +17331,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         fondoFinalCiclo: Number(state.montoIntocable) || 0,
         metaAhorro: Number(state.metaResidual) || 0,
         // Misma fórmula que el Gastable de Inicio (applyBalancePrivacy / renderHero).
-        gastableApp: Math.max(0, (Number(state.totalDisponible) || 0) - (Number(state.metaResidual) || 0))
+        gastableApp: Math.max(0, (Number(state.totalDisponible) || 0) - (Number(state.metaResidual) || 0)),
+        inicioReporte: state.fechaInicioCiclo,
+        finReporte: diaAnterior(proximoSueldoDelCiclo()),
+        cuentasInicio: state.cuentasInicioCiclo || null,
+        deudaInicio: state.deudaInicioCiclo || null
       });
       toast('Excel descargado');
     } catch (error) {
@@ -17079,7 +17368,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           ? Number(ciclo.fondoFinalCiclo)
           : null,
         metaAhorro: Number.isFinite(Number(ciclo.metaResidual)) ? Number(ciclo.metaResidual) : null,
-        gastableApp: Number.isFinite(Number(ciclo.gastableFinal)) ? Number(ciclo.gastableFinal) : null
+        gastableApp: Number.isFinite(Number(ciclo.gastableFinal)) ? Number(ciclo.gastableFinal) : null,
+        inicioReporte: ciclo.fechaInicio || null,
+        finReporte: ciclo.fechaFin || ciclo.fechaInicio || null,
+        cuentasInicio: ciclo.cuentasInicioCiclo || null,
+        deudaInicio: ciclo.deudaInicioCiclo || null
       });
       toast('Ciclo descargado en Excel');
     } catch (error) {

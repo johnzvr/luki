@@ -8069,7 +8069,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '301';
+  const LEDGER_BUILD = '302';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11686,7 +11686,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ? state.log
       : state.log.filter(mov => movimientoCoincideFiltroBanco(mov)))
       .filter(mov => !esMovimientoProyectado(mov));
-    const recent = recentSource.slice(-15).reverse();
+    // BUILD302 · todo el ciclo actual (antes solo los últimos 15 y el resto quedaba oculto
+    // mientras sí se mostraban los del ciclo de sueldo anterior).
+    const recent = recentSource.slice().reverse();
     recent.forEach((mov) => {
       try {
       const idx = state.log.indexOf(mov);

@@ -8069,7 +8069,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '302';
+  const LEDGER_BUILD = '303';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12892,10 +12892,23 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       <p class="modal-sub">${esCuotaPropia
         ? `DS+P · el monto se vuelve a dividir 50/50 y permanece como variante de DS.`
         : `Se conservará la fecha ${escapeHtml(mov.fecha || '')}. Solo cambios de monto, tipo o SEM recalculan movimientos posteriores.`}</p>
+      ${(() => {
+        // BUILD303 · si el gasto fue en dólares, se edita en US$ con el TC guardado.
+        const infoUsd = infoMonedaOriginalMovimiento(mov);
+        const editaUsd = infoUsd.moneda === 'USD' && Number(infoUsd.tipoCambio) > 0;
+        if (!editaUsd) return `
       <div class="modal-field">
         <label>Monto en soles</label>
         <input type="number" id="editMovementAmount" min="0.01" step="0.01" inputmode="decimal" value="${Number(mov.monto).toFixed(2)}">
-      </div>
+      </div>`;
+        const tc = Number(infoUsd.tipoCambio);
+        return `
+      <div class="modal-field">
+        <label>Monto en dólares (US$)</label>
+        <input type="number" id="editMovementAmount" data-usd-tc="${tc}" min="0.01" step="0.01" inputmode="decimal" value="${Number(infoUsd.montoOriginal).toFixed(2)}" oninput="updateEditMovementUsdPreview()">
+        <div class="projected-final-tc-preview" id="editMovementUsdPreview" style="display:block;">TC ${tc.toFixed(3)} · S/ ${fmt(redondearDinero(Number(infoUsd.montoOriginal) * tc))}</div>
+      </div>`;
+      })()}
       <div class="modal-field">
         <label>Tipo</label>
         <div class="edit-type-grid">
@@ -12945,6 +12958,24 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       input.addEventListener('change', () => toggleEditFundType(input.value));
     });
     toggleEditFundType(mov.tipo);
+  }
+
+  function updateEditMovementUsdPreview() {
+    const input = document.getElementById('editMovementAmount');
+    const preview = document.getElementById('editMovementUsdPreview');
+    const tc = Number(input?.dataset.usdTc);
+    if (!input || !preview || !(tc > 0)) return;
+    const usd = Number(input.value);
+    preview.textContent = Number.isFinite(usd) && usd > 0
+      ? `TC ${tc.toFixed(3)} · S/ ${fmt(redondearDinero(usd * tc))}`
+      : `TC ${tc.toFixed(3)}`;
+  }
+
+  // BUILD303 · actualiza "USD 24.53 @ 3.440" dentro del detalle cuando cambia el monto en dólares.
+  function detalleConUsdActualizado(detalle, usd, tc) {
+    const texto = String(detalle || '');
+    const patron = /USD\s*[\d.,]+\s*@\s*[\d.,]+/i;
+    return patron.test(texto) ? texto.replace(patron, `USD ${usd.toFixed(2)} @ ${tc.toFixed(3)}`) : texto;
   }
 
   function saveMovementCategoryOnly(idx) {
@@ -13006,9 +13037,18 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       toast('Monto y tipo solo pueden editarse en los últimos 10 movimientos', true);
       return;
     }
-    const monto = parseFloat(document.getElementById('editMovementAmount')?.value);
+    const valorIngresado = parseFloat(document.getElementById('editMovementAmount')?.value);
+    const tcUsdEdicion = Number(document.getElementById('editMovementAmount')?.dataset.usdTc);
+    const editaUsd = tcUsdEdicion > 0;
+    const monto = editaUsd ? redondearDinero(valorIngresado * tcUsdEdicion) : valorIngresado;
     const tipo = document.querySelector('input[name="editMovementType"]:checked')?.value;
-    const detalle = document.getElementById('editMovementDetail')?.value.trim() || '';
+    let detalle = document.getElementById('editMovementDetail')?.value.trim() || '';
+    if (editaUsd && Number.isFinite(valorIngresado) && valorIngresado > 0) {
+      detalle = detalleConUsdActualizado(detalle, valorIngresado, tcUsdEdicion);
+    }
+    const metaUsdEdicion = editaUsd && Number.isFinite(valorIngresado) && valorIngresado > 0
+      ? { monedaOriginal: 'USD', montoOriginal: redondearDinero(valorIngresado), tipoCambio: tcUsdEdicion }
+      : null;
     const categoria = normalizarCategoriaMovimiento(document.getElementById('editMovementCategory')?.value);
     const tarjetaId = esMovimientoTarjeta(tipo)
       ? normalizarTarjetaId(document.getElementById('editMovementCard')?.value)
@@ -13034,6 +13074,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     // guardar directamente sin entrar al motor de recálculo.
     if (!montoCambio && !tipoCambio && !semCambio) {
       currentMov.detalle = detalle;
+      if (metaUsdEdicion) Object.assign(currentMov, metaUsdEdicion);
       if (categoria) currentMov.categoria = categoria;
       else delete currentMov.categoria;
       if (esMovimientoTarjeta(tipo)) currentMov.tarjetaId = tarjetaId;
@@ -13083,6 +13124,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         } : {}),
         snapshot: cloneMovementSnapshot(targetBefore)
       };
+      if (metaUsdEdicion) Object.assign(editedMov, metaUsdEdicion);
+      // BUILD303 · los gastos en US$ guardan su impacto en el presupuesto; si era el monto
+      // completo, debe seguir al nuevo monto (antes quedaba el valor anterior y el Disponible no cambiaba).
+      if (!planCuotaPropia && Number.isFinite(Number(originalMov.impactoPresupuesto))
+        && Math.abs(Number(originalMov.impactoPresupuesto) - (Number(originalMov.monto) || 0)) < 0.01) {
+        editedMov.impactoPresupuesto = redondearDinero(monto);
+      }
       if (categoria) editedMov.categoria = categoria;
       else delete editedMov.categoria;
       if (esMovimientoTarjeta(tipo)) editedMov.tarjetaId = tarjetaId;

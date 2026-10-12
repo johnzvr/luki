@@ -8069,7 +8069,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '303';
+  const LEDGER_BUILD = '304';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12893,20 +12893,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         ? `DS+P · el monto se vuelve a dividir 50/50 y permanece como variante de DS.`
         : `Se conservará la fecha ${escapeHtml(mov.fecha || '')}. Solo cambios de monto, tipo o SEM recalculan movimientos posteriores.`}</p>
       ${(() => {
-        // BUILD303 · si el gasto fue en dólares, se edita en US$ con el TC guardado.
+        // BUILD304 · selector S/ · US$ igual que al registrar.
         const infoUsd = infoMonedaOriginalMovimiento(mov);
-        const editaUsd = infoUsd.moneda === 'USD' && Number(infoUsd.tipoCambio) > 0;
-        if (!editaUsd) return `
-      <div class="modal-field">
-        <label>Monto en soles</label>
-        <input type="number" id="editMovementAmount" min="0.01" step="0.01" inputmode="decimal" value="${Number(mov.monto).toFixed(2)}">
-      </div>`;
-        const tc = Number(infoUsd.tipoCambio);
+        const esUsd = infoUsd.moneda === 'USD' && Number(infoUsd.tipoCambio) > 0;
+        editMovementCurrency = esUsd ? 'USD' : 'PEN';
+        editMovementTc = esUsd ? Number(infoUsd.tipoCambio) : null;
+        const valor = esUsd ? Number(infoUsd.montoOriginal) : Number(mov.monto);
         return `
       <div class="modal-field">
-        <label>Monto en dólares (US$)</label>
-        <input type="number" id="editMovementAmount" data-usd-tc="${tc}" min="0.01" step="0.01" inputmode="decimal" value="${Number(infoUsd.montoOriginal).toFixed(2)}" oninput="updateEditMovementUsdPreview()">
-        <div class="projected-final-tc-preview" id="editMovementUsdPreview" style="display:block;">TC ${tc.toFixed(3)} · S/ ${fmt(redondearDinero(Number(infoUsd.montoOriginal) * tc))}</div>
+        <label id="editMovementAmountLabel">Monto</label>
+        <div class="projected-final-amount-wrap">
+          <button type="button" class="projected-final-currency-toggle${esUsd ? ' usd' : ''}" id="editMovementCurrencyToggle" onclick="toggleEditMovementCurrency()" aria-label="Cambiar moneda">${esUsd ? 'US$' : 'S/'}</button>
+          <input type="number" id="editMovementAmount" min="0.01" step="0.01" inputmode="decimal" value="${Number(valor).toFixed(2)}" oninput="updateEditMovementUsdPreview()" style="padding-left:68px;">
+        </div>
+        <div class="projected-final-tc-preview${esUsd ? ' visible' : ''}" id="editMovementUsdPreview"></div>
       </div>`;
       })()}
       <div class="modal-field">
@@ -12958,24 +12958,58 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       input.addEventListener('change', () => toggleEditFundType(input.value));
     });
     toggleEditFundType(mov.tipo);
+    updateEditMovementUsdPreview();
   }
+
+  let editMovementCurrency = 'PEN';
+  let editMovementTc = null;
 
   function updateEditMovementUsdPreview() {
     const input = document.getElementById('editMovementAmount');
     const preview = document.getElementById('editMovementUsdPreview');
-    const tc = Number(input?.dataset.usdTc);
-    if (!input || !preview || !(tc > 0)) return;
-    const usd = Number(input.value);
-    preview.textContent = Number.isFinite(usd) && usd > 0
-      ? `TC ${tc.toFixed(3)} · S/ ${fmt(redondearDinero(usd * tc))}`
+    const toggle = document.getElementById('editMovementCurrencyToggle');
+    if (!input || !preview) return;
+    const usd = editMovementCurrency === 'USD';
+    if (toggle) {
+      toggle.textContent = usd ? 'US$' : 'S/';
+      toggle.classList.toggle('usd', usd);
+    }
+    preview.classList.toggle('visible', usd);
+    if (!usd) { preview.textContent = ''; return; }
+    const valor = Number(input.value);
+    const tc = Number(editMovementTc);
+    preview.innerHTML = Number.isFinite(valor) && valor > 0
+      ? `TC ${tc.toFixed(3)} · equivale a <strong>S/ ${fmt(redondearDinero(valor * tc))}</strong>`
       : `TC ${tc.toFixed(3)}`;
+  }
+
+  // Igual que el registro: el número no se convierte, solo cambia la moneda en que se interpreta.
+  function toggleEditMovementCurrency() {
+    if (editMovementCurrency === 'USD') {
+      editMovementCurrency = 'PEN';
+    } else {
+      const tc = Number(editMovementTc) > 0 ? Number(editMovementTc) : Number(getExchangeRate());
+      if (!(tc > 0)) {
+        toast('Sin tipo de cambio · revisa tu conexión', true);
+        return;
+      }
+      editMovementTc = tc;
+      editMovementCurrency = 'USD';
+    }
+    updateEditMovementUsdPreview();
   }
 
   // BUILD303 · actualiza "USD 24.53 @ 3.440" dentro del detalle cuando cambia el monto en dólares.
   function detalleConUsdActualizado(detalle, usd, tc) {
     const texto = String(detalle || '');
     const patron = /USD\s*[\d.,]+\s*@\s*[\d.,]+/i;
-    return patron.test(texto) ? texto.replace(patron, `USD ${usd.toFixed(2)} @ ${tc.toFixed(3)}`) : texto;
+    const etiqueta = `USD ${usd.toFixed(2)} @ ${tc.toFixed(3)}`;
+    if (patron.test(texto)) return texto.replace(patron, etiqueta);
+    return texto ? `${texto} · ${etiqueta}` : etiqueta;
+  }
+
+  function detalleSinUsd(detalle) {
+    return String(detalle || '').replace(/\s*·?\s*USD\s*[\d.,]+\s*@\s*[\d.,]+/i, '').trim();
   }
 
   function saveMovementCategoryOnly(idx) {
@@ -13038,17 +13072,17 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       return;
     }
     const valorIngresado = parseFloat(document.getElementById('editMovementAmount')?.value);
-    const tcUsdEdicion = Number(document.getElementById('editMovementAmount')?.dataset.usdTc);
-    const editaUsd = tcUsdEdicion > 0;
+    const tcUsdEdicion = Number(editMovementTc);
+    const editaUsd = editMovementCurrency === 'USD' && tcUsdEdicion > 0;
     const monto = editaUsd ? redondearDinero(valorIngresado * tcUsdEdicion) : valorIngresado;
     const tipo = document.querySelector('input[name="editMovementType"]:checked')?.value;
     let detalle = document.getElementById('editMovementDetail')?.value.trim() || '';
-    if (editaUsd && Number.isFinite(valorIngresado) && valorIngresado > 0) {
-      detalle = detalleConUsdActualizado(detalle, valorIngresado, tcUsdEdicion);
-    }
-    const metaUsdEdicion = editaUsd && Number.isFinite(valorIngresado) && valorIngresado > 0
+    const valorValido = Number.isFinite(valorIngresado) && valorIngresado > 0;
+    if (valorValido) detalle = editaUsd ? detalleConUsdActualizado(detalle, valorIngresado, tcUsdEdicion) : detalleSinUsd(detalle);
+    // Moneda original: se actualiza siempre según lo elegido en el selector.
+    const metaUsdEdicion = !valorValido ? null : (editaUsd
       ? { monedaOriginal: 'USD', montoOriginal: redondearDinero(valorIngresado), tipoCambio: tcUsdEdicion }
-      : null;
+      : { monedaOriginal: 'PEN', montoOriginal: redondearDinero(valorIngresado), tipoCambio: null });
     const categoria = normalizarCategoriaMovimiento(document.getElementById('editMovementCategory')?.value);
     const tarjetaId = esMovimientoTarjeta(tipo)
       ? normalizarTarjetaId(document.getElementById('editMovementCard')?.value)

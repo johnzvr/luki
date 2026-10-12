@@ -8069,7 +8069,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '308';
+  const LEDGER_BUILD = '309';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11632,7 +11632,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     
     // Estado de Deshacer y Rehacer
     const btnUndo = document.getElementById('btnUndo');
-    if (btnUndo) { const ultimo = state.log[state.log.length - 1]; btnUndo.disabled = state.log.length === 0 || (!!ultimo?.planCuotasId && !esMovimientoCuotasPropias(ultimo)); }
+    if (btnUndo) { const ultimo = state.log[state.log.length - 1]; btnUndo.disabled = !correccionDeudaVigente() && (state.log.length === 0 || (!!ultimo?.planCuotasId && !esMovimientoCuotasPropias(ultimo))); }
     const btnRedo = document.getElementById('btnRedo');
     if (btnRedo) btnRedo.disabled = !state.redoMovement;
     const btnHistory = document.getElementById('btnCycleHistory');
@@ -11798,9 +11798,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         if (puedeEditarArchivado) {
           const row = document.createElement('div');
           row.className = 'log-swipe swipe-enabled';
-          row.dataset.canUndo = '0';
+          row.dataset.canUndo = '1';
           row.dataset.canEdit = '1';
           row.innerHTML = `
+            <button class="swipe-action undo" onclick="confirmDeleteArchivedCardMovement('${refCiclo}', ${index})">Eliminar</button>
             <button class="swipe-action edit" onclick="openEditArchivedCardMovement('${refCiclo}', ${index})">Editar</button>
             <div class="${itemClass}" data-swipe-index="${index}">
               <div class="log-left">
@@ -11984,9 +11985,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       if (esTarjetaVigenteArchivada && entrada.ciclo) {
         const refCiclo = referenciaCicloArchivado(entrada.ciclo);
         div.className = 'log-swipe swipe-enabled';
-        div.dataset.canUndo = '0';
+        div.dataset.canUndo = '1';
         div.dataset.canEdit = '1';
         div.innerHTML = `
+          <button class="swipe-action undo" onclick="confirmDeleteArchivedCardMovement('${refCiclo}', ${entrada.index})">Eliminar</button>
           <button class="swipe-action edit" onclick="openEditArchivedCardMovement('${refCiclo}', ${entrada.index})">Editar</button>
           <div class="${itemClass}" data-swipe-index="${entrada.index}">
             <div class="log-left">
@@ -12274,6 +12276,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       return currentStateMatchesSnapshot(redo.afterDeleteState)
         && JSON.stringify(state.log) === redo.afterDeleteLog;
     }
+    if (redo.kind === 'redo-debt-correction') {
+      return !!redo.correccion?.antes && currentStateMatchesSnapshot(redo.correccion.antes.movimiento);
+    }
     return !!redo.movement
       && state.log.length === redo.logLength
       && currentStateMatchesSnapshot(redo.movement.snapshot);
@@ -12539,6 +12544,221 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     } catch (e) { return false; }
   }
 
+  // ============ BUILD309 · CORRECCIÓN DE DEUDA INICIAL ============
+  // Una compra del ciclo de sueldo anterior cuya deuda seguía pendiente al abrir este ciclo
+  // quedó reservada en el Disponible inicial (cuentas − Fondo − deuda pendiente).
+  // Editarla o eliminarla corrige esa reserva UNA vez: deuda inicial, deuda actual, Disponible,
+  // Fondo (si la cubre el Fondo), inicio del ciclo y bloques. El Gastado del ciclo no cambia.
+  function cargasDeudaInicial(mov) {
+    if (!mov) return { disponible: 0, fondo: 0, deuda: 0 };
+    const monto = redondearDinero(Number(mov.monto) || 0);
+    const tipo = normalizarTipoMovimiento(mov.tipo);
+    if (tipo === 'DS') return { disponible: monto, fondo: 0, deuda: monto };
+    if (tipo === 'FDS') return { disponible: 0, fondo: monto, deuda: monto };
+    return { disponible: 0, fondo: 0, deuda: 0 };
+  }
+
+  function compraIncluidaEnDeudaInicial(mov, idx, ciclo) {
+    const deuda = state.deudaInicioCiclo;
+    if (!mov || !ciclo || !deuda || !(Number(deuda.totalSoles) > 0)) return false;
+    const vista = vistaTarjetaDeMovimiento(mov);
+    if (!esMovimientoTarjeta(vista)) return false;
+    const tarjetaId = normalizarTarjetaId(vista.tarjetaId);
+    const fecha = fechaDeMovimiento(vista, idx, ciclo.fechaInicio);
+    if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) return false;
+    // Debe existir antes de abrir este ciclo de sueldo.
+    if (state.fechaInicioCiclo && fecha >= inicioDelDia(state.fechaInicioCiclo)) return false;
+    // Un estado ya pagado nunca formó parte de la deuda pendiente.
+    if (fechaPerteneceACicloPagado(fecha, tarjetaId)) return false;
+    try {
+      const pagos = contextoPagosTarjeta();
+      const grupo = grupoPagoParaMovimiento(vista, idx, ciclo.fechaInicio, pagos.grupos);
+      if (grupo && pagoPendienteParaGrupo(grupo)) return false;
+    } catch (e) {}
+    const jalados = Array.isArray(deuda.estadosJalados) ? deuda.estadosJalados : [];
+    if (!jalados.length) return true; // deuda ingresada a mano: esa cifra es la base
+    const dia = fechaParaInput(fecha);
+    return jalados.some(e => normalizarTarjetaId(e?.tarjetaId) === tarjetaId
+      && (!e.inicio || dia >= e.inicio) && (!e.cierre || dia <= e.cierre));
+  }
+
+  function snapshotCorreccionDeuda() {
+    return {
+      movimiento: captureMovementState(),
+      deudaBaseCiclo: deudaBaseCicloActual(),
+      presupuestoInicial: Number(state.presupuestoInicial) || 0,
+      saldoInicialCiclo: Number.isFinite(Number(state.saldoInicialCiclo)) ? Number(state.saldoInicialCiclo) : null,
+      deudaInicioTotal: Number(state.deudaInicioCiclo?.totalSoles) || 0,
+      ajustes: JSON.parse(JSON.stringify(state.deudaInicioCiclo?.ajustesPosteriores || []))
+    };
+  }
+
+  function restaurarSnapshotCorreccionDeuda(snap) {
+    restoreMovementState(snap.movimiento);
+    state.deudaBaseCiclo = snap.deudaBaseCiclo;
+    state.presupuestoInicial = snap.presupuestoInicial;
+    state.saldoInicialCiclo = snap.saldoInicialCiclo;
+    if (state.deudaInicioCiclo) {
+      state.deudaInicioCiclo.totalSoles = snap.deudaInicioTotal;
+      state.deudaInicioCiclo.ajustesPosteriores = JSON.parse(JSON.stringify(snap.ajustes || []));
+    }
+  }
+
+  // Reparte la diferencia en partes iguales entre los bloques restantes (como "sem").
+  function ajustarBloquesPorCorreccion(delta) {
+    if (!Array.isArray(state.semanas) || !state.semanas.length || Math.abs(delta) < 0.005) return;
+    const idx = Math.max(0, calcularSemanaIdxParaFecha(new Date()));
+    if (delta < 0) {
+      const r = restarGastoDivididoEntreBloques(state.semanas, -delta, idx);
+      if (r.exceso > 0) state.semanas[idx].exceso = redondearDinero((Number(state.semanas[idx].exceso) || 0) + r.exceso);
+    } else {
+      const n = state.semanas.length - idx;
+      for (let i = idx; i < state.semanas.length; i++) {
+        state.semanas[i].presupuesto = redondearDinero((Number(state.semanas[i].presupuesto) || 0) + delta / n);
+      }
+    }
+  }
+
+  // movAntes/movDespues: copias de la compra antes y después (null si se agrega o elimina).
+  function aplicarCorreccionDeudaInicial(ciclo, idx, movAntes, movDespues) {
+    if (!compraIncluidaEnDeudaInicial(movAntes, idx, ciclo)) return null;
+    const a = cargasDeudaInicial(movAntes);
+    const b = cargasDeudaInicial(movDespues);
+    const dDeuda = redondearDinero(b.deuda - a.deuda);
+    const dDisponible = redondearDinero(a.disponible - b.disponible);
+    const dFondo = redondearDinero(a.fondo - b.fondo);
+    if (Math.abs(dDeuda) < 0.005 && Math.abs(dDisponible) < 0.005 && Math.abs(dFondo) < 0.005) return { dDeuda: 0, dDisponible: 0, dFondo: 0 };
+    state.deudaActual = redondearDinero((Number(state.deudaActual) || 0) + dDeuda);
+    state.deudaBaseCiclo = redondearDinero(deudaBaseCicloActual() + dDeuda);
+    state.totalDisponible = redondearDinero((Number(state.totalDisponible) || 0) + dDisponible);
+    state.montoIntocable = redondearDinero((Number(state.montoIntocable) || 0) + dFondo);
+    // El inicio del ciclo se corrige por lo mismo: el Gastado (inicio − disponible) no cambia.
+    state.presupuestoInicial = redondearDinero((Number(state.presupuestoInicial) || 0) + dDisponible);
+    if (Number.isFinite(Number(state.saldoInicialCiclo))) {
+      state.saldoInicialCiclo = redondearDinero(Number(state.saldoInicialCiclo) + dDisponible);
+    }
+    ajustarBloquesPorCorreccion(dDisponible);
+    if (state.deudaInicioCiclo) {
+      state.deudaInicioCiclo.totalSoles = redondearDinero((Number(state.deudaInicioCiclo.totalSoles) || 0) + dDeuda);
+      if (!Array.isArray(state.deudaInicioCiclo.ajustesPosteriores)) state.deudaInicioCiclo.ajustesPosteriores = [];
+      state.deudaInicioCiclo.ajustesPosteriores.push({
+        fecha: new Date().toISOString(),
+        detalle: (movAntes?.detalle || movDespues?.detalle || 'Compra'),
+        deuda: dDeuda, disponible: dDisponible, fondo: dFondo
+      });
+    }
+    return { dDeuda, dDisponible, dFondo };
+  }
+
+  // Registra el cambio para que Deshacer/Rehacer lo reviertan completo.
+  function registrarUndoCorreccion(cicloId, idx, movAntes, movDespues, antes) {
+    state.correccionDeudaAnterior = {
+      cicloId, idx,
+      movAntes: movAntes ? JSON.parse(JSON.stringify(movAntes)) : null,
+      movDespues: movDespues ? JSON.parse(JSON.stringify(movDespues)) : null,
+      antes, despues: snapshotCorreccionDeuda()
+    };
+    state.redoMovement = null;
+  }
+
+  function correccionDeudaVigente() {
+    const c = state.correccionDeudaAnterior;
+    if (!c || !c.despues) return null;
+    return currentStateMatchesSnapshot(c.despues.movimiento) ? c : null;
+  }
+
+  function aplicarVersionCompraArchivada(c, version) {
+    const ciclo = getArchivedCycles().find(x => String(x?.id || '') === String(c.cicloId));
+    if (!ciclo || !Array.isArray(ciclo.movimientos)) return false;
+    const antes = version === 'antes' ? c.movAntes : c.movDespues;
+    const otra = version === 'antes' ? c.movDespues : c.movAntes;
+    if (otra && antes) ciclo.movimientos[c.idx] = JSON.parse(JSON.stringify(antes));
+    else if (otra && !antes) ciclo.movimientos.splice(c.idx, 1);
+    else if (!otra && antes) ciclo.movimientos.splice(c.idx, 0, JSON.parse(JSON.stringify(antes)));
+    recalcularResumenCicloArchivado(ciclo);
+    return true;
+  }
+
+  function deshacerCorreccionDeuda() {
+    const c = correccionDeudaVigente();
+    if (!c) { closeModal(); toast('Ya hubo otros cambios; no se puede deshacer', true); return; }
+    if (!aplicarVersionCompraArchivada(c, 'antes')) { closeModal(); toast('No se encontró la compra', true); return; }
+    restaurarSnapshotCorreccionDeuda(c.antes);
+    state.correccionDeudaAnterior = null;
+    closeModal();
+    render({ markModified: false, sync: false });
+    c.antes = snapshotCorreccionDeuda();
+    state.redoMovement = { kind: 'redo-debt-correction', correccion: c };
+    saveState({ markModified: true, sync: true });
+    toast('Corrección deshecha');
+    render({ markModified: false, sync: false });
+  }
+
+  function rehacerCorreccionDeuda(redo) {
+    const c = redo?.correccion;
+    if (!c || !currentStateMatchesSnapshot(c.antes.movimiento)) {
+      state.redoMovement = null;
+      toast('Ya hubo otros cambios; no se puede rehacer', true);
+      render({ markModified: false, sync: false });
+      return;
+    }
+    if (!aplicarVersionCompraArchivada(c, 'despues')) { toast('No se encontró la compra', true); return; }
+    restaurarSnapshotCorreccionDeuda(c.despues);
+    state.redoMovement = null;
+    render({ markModified: false, sync: false });
+    c.despues = snapshotCorreccionDeuda();
+    state.correccionDeudaAnterior = c;
+    saveState({ markModified: true, sync: true });
+    toast('Corrección rehecha');
+    render({ markModified: false, sync: false });
+  }
+
+  function textoCorreccion(r) {
+    if (!r || (Math.abs(r.dDisponible) < 0.005 && Math.abs(r.dFondo) < 0.005 && Math.abs(r.dDeuda) < 0.005)) return '';
+    const signo = v => (v > 0 ? '+' : '−') + 'S/ ' + fmt(Math.abs(v));
+    const partes = [];
+    if (Math.abs(r.dDeuda) >= 0.005) partes.push('deuda ' + signo(r.dDeuda));
+    if (Math.abs(r.dDisponible) >= 0.005) partes.push('Disponible ' + signo(r.dDisponible));
+    if (Math.abs(r.dFondo) >= 0.005) partes.push('Fondo ' + signo(r.dFondo));
+    return ' · ' + partes.join(' · ');
+  }
+
+  function confirmDeleteArchivedCardMovement(refCodificada, idx) {
+    const ciclo = cicloArchivadoPorReferencia(refCodificada);
+    const mov = ciclo?.movimientos?.[Number(idx)];
+    if (!ciclo || !mov) { toast('No se encontró el movimiento', true); return; }
+    const incluida = compraIncluidaEnDeudaInicial(mov, Number(idx), ciclo);
+    const c = cargasDeudaInicial(mov);
+    openModal(`
+      <h2>Eliminar <span class="accent">compra</span></h2>
+      <p class="modal-sub"><strong>S/ ${fmt(mov.monto)}</strong> — ${etiquetaTipoMovimiento(mov)}<br>${escapeHtml(mov.detalle || 'Sin detalle')}<br>
+        <span style="color:var(--ink-mute);font-size:11px;">${escapeHtml(mov.fecha || '')}</span></p>
+      <p class="modal-sub" style="font-size:11px;">${incluida
+        ? `Estaba en la deuda pendiente con la que abriste este ciclo. Al eliminarla, la deuda baja S/ ${fmt(c.deuda)}${c.disponible > 0 ? ` y tu Disponible sube S/ ${fmt(c.disponible)}` : ''}${c.fondo > 0 ? ` y el Fondo recupera S/ ${fmt(c.fondo)}` : ''}. Podrás revertirlo con Deshacer.`
+        : 'Se quitará del ciclo bancario y del histórico. No estaba en la deuda inicial, así que tu Disponible no cambia.'}</p>
+      <div class="modal-buttons">
+        <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn-danger" onclick="deleteArchivedCardMovement('${refCodificada}', ${Number(idx)})">Eliminar</button>
+      </div>`);
+  }
+
+  function deleteArchivedCardMovement(refCodificada, idx) {
+    const ciclo = cicloArchivadoPorReferencia(refCodificada);
+    const mov = ciclo?.movimientos?.[Number(idx)];
+    if (!ciclo || !mov) { closeModal(); toast('No se encontró el movimiento', true); return; }
+    const movAntes = JSON.parse(JSON.stringify(mov));
+    const antes = snapshotCorreccionDeuda();
+    const r = aplicarCorreccionDeudaInicial(ciclo, Number(idx), movAntes, null);
+    ciclo.movimientos.splice(Number(idx), 1);
+    recalcularResumenCicloArchivado(ciclo);
+    closeModal();
+    render({ markModified: false, sync: false });
+    registrarUndoCorreccion(ciclo.id, Number(idx), movAntes, null, antes);
+    saveState({ markModified: true, sync: true });
+    toast('Compra eliminada' + textoCorreccion(r));
+    render({ markModified: false, sync: false });
+  }
+
   function openEditArchivedCardMovement(refCodificada, idx) {
     const ciclo = cicloArchivadoPorReferencia(refCodificada);
     const mov = ciclo?.movimientos?.[Number(idx)];
@@ -12558,9 +12778,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     // BUILD307 · mismo selector S/ · US$ que el editor principal.
     editMovementCurrency = esUsd ? 'USD' : 'PEN';
     editMovementTc = esUsd ? Number(info.tipoCambio) : null;
+    const enDeudaInicial = compraIncluidaEnDeudaInicial(mov, Number(idx), ciclo);
     openModal(`
       <h2>Editar <span class="accent">movimiento</span></h2>
-      <p class="modal-sub">Compra del ciclo bancario actual · ${escapeHtml(mov.fecha || '')}</p>
+      <p class="modal-sub">Compra del ciclo bancario actual · ${escapeHtml(mov.fecha || '')}${enDeudaInicial
+        ? '<br><span style="font-size:11px;">Está en la deuda pendiente con la que abriste este ciclo: si cambias monto o tipo, tu Disponible se corrige por la diferencia.</span>'
+        : ''}</p>
       <div class="modal-field">
         <label>Monto</label>
         <div class="projected-final-amount-wrap">
@@ -12633,6 +12856,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       toast('Ingresa un monto válido', true);
       return;
     }
+    const movAntesCorreccion = JSON.parse(JSON.stringify(mov));
+    const antesCorreccion = snapshotCorreccionDeuda();
     const tc = Number(editMovementTc);
     const enUsd = editMovementCurrency === 'USD' && tc > 0;
     let detalle = String(document.getElementById('editArchivedCardDetail')?.value || '').trim();
@@ -12670,10 +12895,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       mov.tarjetaId = null;
     }
     recalcularResumenCicloArchivado(ciclo);
-    saveState({ markModified: true, sync: true });
+    // BUILD309 · si estaba en la deuda inicial, corrige Disponible/deuda/Fondo por la diferencia.
+    const correccion = aplicarCorreccionDeudaInicial(ciclo, Number(idx), movAntesCorreccion, mov);
     closeModal();
-    toast('Movimiento actualizado');
-    render();
+    render({ markModified: false, sync: false });
+    registrarUndoCorreccion(ciclo.id, Number(idx), movAntesCorreccion, JSON.parse(JSON.stringify(mov)), antesCorreccion);
+    saveState({ markModified: true, sync: true });
+    toast('Movimiento actualizado' + textoCorreccion(correccion));
+    render({ markModified: false, sync: false });
   }
 
   let projectedFinalCurrency = 'PEN';
@@ -13331,6 +13560,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function undoLast() {
+    // BUILD309 · si lo último fue corregir una compra de la deuda inicial, se deshace eso primero.
+    const correccion = correccionDeudaVigente();
+    if (correccion) {
+      const ref = correccion.movAntes || correccion.movDespues || {};
+      openModal(`
+        <h2>Deshacer <span class="accent">corrección</span></h2>
+        <p class="modal-sub"><strong>${escapeHtml(ref.detalle || 'Compra')}</strong> · compra del ciclo anterior<br>
+          ${correccion.movDespues ? 'Volverá a sus datos anteriores' : 'Volverá a aparecer'}, junto con la deuda, el Disponible y el Fondo.</p>
+        <div class="modal-buttons">
+          <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn-danger" onclick="deshacerCorreccionDeuda()">Sí, deshacer</button>
+        </div>`);
+      return;
+    }
     if (state.log.length === 0) {
       toast('No hay movimientos que deshacer', true);
       return;
@@ -13364,6 +13607,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const redo = state.redoMovement;
     if (!redo) {
       toast('No hay movimientos que rehacer', true);
+      return;
+    }
+    if (redo.kind === 'redo-debt-correction') {
+      rehacerCorreccionDeuda(redo);
       return;
     }
     if (redo.kind === 're-realize-projected') {

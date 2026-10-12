@@ -8069,7 +8069,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '305';
+  const LEDGER_BUILD = '306';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -10228,6 +10228,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         } catch(e) {}
       });
     }
+
+    // BUILD306 · el editor completo aplica a todo el ciclo actual (mismo motor de
+    // recálculo que eliminar). Excepciones: redistribuciones y cuotas de planes del banco.
+    state.log.forEach((mov, i) => {
+      if (!mov?.snapshot || mov.etiqueta === 'recalcula') return;
+      if (mov.planCuotasId && !esMovimientoCuotasPropias(mov)) return;
+      indices.add(i);
+    });
 
     // Se mantiene la regla histórica de los últimos 10 para el resto.
     let recientes = 0;
@@ -13076,7 +13084,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function saveMovementEdit(idx) {
     if (!getEditableMovementIndices().includes(idx)) {
       closeModal();
-      toast('Monto y tipo solo pueden editarse en los últimos 10 movimientos', true);
+      toast('Este movimiento no se puede editar', true);
       return;
     }
     const valorIngresado = parseFloat(document.getElementById('editMovementAmount')?.value);
@@ -18324,7 +18332,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <span class="help-item-chip MOD">2×</span>
           <span class="help-item-title">Editar o eliminar</span>
         </div>
-        <div class="help-item-desc">Doble tap en un movimiento → Editar o Eliminar. Puedes eliminar cualquier gasto del ciclo; Luki recalcula los posteriores. Monto y tipo se editan en los últimos 10 movimientos (y en cualquier compra del ciclo de tarjeta vigente). La categoría puede cambiarse en cualquier gasto del ciclo porque no altera los cálculos.</div>
+        <div class="help-item-desc">Doble tap en un movimiento → Editar o Eliminar. Puedes editar o eliminar cualquier gasto del ciclo; Luki recalcula los posteriores. La categoría puede cambiarse en cualquier gasto del ciclo porque no altera los cálculos.</div>
       </div>
       <div class="help-item">
         <div class="help-item-head">

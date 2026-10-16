@@ -8093,7 +8093,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '318';
+  const LEDGER_BUILD = '319';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -17931,11 +17931,21 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function tarjetaBandeja(item) { return item?.banco === 'bcp' ? 'bcp' : 'interbank'; }
+
+  // BUILD319 · Plin desde tu cuenta a tu propio nombre = mover plata entre tus cuentas, no es gasto.
+  // Lo que cuenta es el consumo final (débito BCP o Yape), que llega por su propio correo.
+  // "JOHNNY ZAVALA CHAMORRO" es otra persona: solo "John … Zavala" cuenta como propio.
+  function esTransferenciaPropiaBandeja(item) {
+    if (!item || item.clase !== 'plin' || item.credito) return false;
+    const n = String(item.comercio || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    return n[0] === 'john' && n.includes('zavala');
+  }
   function tipoSugeridoBandeja(item) { return item?.credito ? 'DS' : 'S'; }
 
   function detalleBandeja(item) {
     const nombre = String(item?.comercio || '').trim();
     if (item?.clase === 'plin') return nombre ? `Plin · ${nombre}` : 'Plin';
+    if (item?.clase === 'yape') return nombre ? `Yape · ${nombre}` : 'Yape';
     return nombre || 'Consumo';
   }
 
@@ -17983,7 +17993,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const descartados = new Set(Array.isArray(state.bandejaDescartados) ? state.bandejaDescartados : []);
     const items = (Array.isArray(bandejaDatos?.items) ? bandejaDatos.items : [])
       .filter(it => it && it.id && Number(it.monto) > 0 && !Number.isNaN(new Date(it.fechaISO).getTime()))
-      .filter(it => new Date(it.fechaISO).getTime() >= desdeMs && !descartados.has(it.id))
+      .filter(it => new Date(it.fechaISO).getTime() >= desdeMs && !descartados.has(it.id) && !esTransferenciaPropiaBandeja(it))
       .sort((a, b) => String(a.fechaISO).localeCompare(String(b.fechaISO)));
     const movs = movimientosParaConciliarBandeja(desdeMs);
     const usados = new Set();
@@ -18017,7 +18027,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function filaBandejaHtml(item, registrado) {
     const tipo = tipoSugeridoBandeja(item);
     const banco = tarjetaBandeja(item);
-    const origen = item.clase === 'plin' ? (item.credito ? 'Plin TC' : 'Plin cuenta') : (item.credito ? '' : 'Débito');
+    const origen = item.clase === 'plin' ? (item.credito ? 'Plin TC' : 'Plin cuenta') : (item.clase === 'yape' ? 'Yape' : (item.credito ? '' : 'Débito'));
     return `
       <div class="log-item projected-movement bandeja-item${registrado ? ' bandeja-registrado' : ''}"${registrado ? '' : ` data-id="${escapeHtml(item.id)}" onclick="openBandejaItem(this.dataset.id)"`}>
         <div class="log-left">

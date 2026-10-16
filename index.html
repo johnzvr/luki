@@ -8087,7 +8087,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '314';
+  const LEDGER_BUILD = '315';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -18015,7 +18015,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <div class="log-dot PROY">${registrado ? '✓' : tipo}</div>
           <div class="log-info">
             <div class="log-detail">${escapeHtml(detalleBandeja(item))}</div>
-            <div class="log-meta"><span class="projected-status">${registrado ? 'Ya registrado' : 'Por confirmar'}</span><span class="card-bank-badge bank-${banco}">${escapeHtml(nombreTarjeta(banco))}</span><span>${escapeHtml(fechaBandejaTexto(item))}</span>${origen ? `<span>${origen}</span>` : ''}</div>
+            <div class="log-meta"><span class="projected-status">${registrado ? 'Ya registrado' : 'Por confirmar'}</span><span class="card-bank-badge">${escapeHtml(nombreTarjeta(banco))}</span><span>${escapeHtml(fechaBandejaTexto(item))}</span>${origen ? `<span>${origen}</span>` : ''}</div>
           </div>
         </div>
         <div class="log-right"><div class="log-amount">${montoBandejaTexto(item)}</div></div>

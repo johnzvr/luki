@@ -8088,7 +8088,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '316';
+  const LEDGER_BUILD = '317';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -18048,12 +18048,16 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return pendientes.length;
   }
 
+  // BUILD317 · un solo modal, como Editar movimiento: se llena todo y se registra de una vez.
   function openBandejaItem(id) {
     const item = bandejaItemPorId(id);
     if (!item) return;
     if (!estadoBandeja().pendientes.some(it => it.id === id)) { toast('Ese consumo ya está registrado'); renderLog(); return; }
     const sugerido = tipoSugeridoBandeja(item);
     const banco = tarjetaBandeja(item);
+    const detalle = detalleBandeja(item);
+    let sugerencia = { categoria: '' };
+    try { sugerencia = sugerenciaMovimiento(detalle); } catch (e) {}
     const rate = getExchangeRate();
     const conversion = item.moneda === 'USD'
       ? (rate ? ` ≈ S/ ${fmt(Number(item.monto) * rate)} @ ${rate.toFixed(3)}` : ' · sin tipo de cambio')
@@ -18077,19 +18081,53 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           ${opcion('DS', 'DS · Tarjeta')}
           ${opcion('DSC', 'DS+C · Cubierta')}
           ${opcion('DSP', 'DS+P · 2 cuotas')}
+          ${opcion('F', 'F · Fondo')}
           ${opcion('FDS', 'F+DS · Fondo', ' fds')}
         </div>
       </div>
       <div class="modal-field">
         <label>Detalle</label>
-        <input type="text" id="bandejaDetalle" value="${escapeHtml(detalleBandeja(item))}" autocomplete="off">
+        <input type="text" id="bandejaDetalle" value="${escapeHtml(detalle)}" autocomplete="off">
       </div>
+      <div class="modal-field">
+        <label>Categoría${sugerencia.categoria ? ' <span style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-mute);">· sugerida por tus registros</span>' : ''}</label>
+        <select id="bandejaCategoria">${opcionesCategoriaMovimiento(sugerencia.categoria)}</select>
+      </div>
+      <div class="modal-field" id="bandejaTarjetaRow">
+        <label>Tarjeta</label>
+        <select id="bandejaTarjeta">
+          <option value="interbank" ${banco !== 'bcp' ? 'selected' : ''}>Interbank</option>
+          <option value="bcp" ${banco === 'bcp' ? 'selected' : ''}>BCP</option>
+        </select>
+      </div>
+      <label class="edit-sem-row" id="bandejaSemRow">
+        <span>Repartir entre los bloques restantes</span>
+        <input type="checkbox" id="bandejaSem">
+      </label>
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button class="btn-primary" data-id="${escapeHtml(item.id)}" onclick="continuarBandejaItem(this.dataset.id)">Continuar</button>
+        <button class="btn-primary" data-id="${escapeHtml(item.id)}" onclick="continuarBandejaItem(this.dataset.id)">Registrar</button>
       </div>
       <button type="button" class="bandeja-descartar" data-id="${escapeHtml(item.id)}" onclick="descartarBandejaItem(this.dataset.id)">Descartar este consumo</button>
     `);
+    document.querySelectorAll('input[name="bandejaTipo"]').forEach(input => {
+      input.addEventListener('change', () => actualizarCamposBandeja(input.value));
+    });
+    actualizarCamposBandeja(sugerido);
+  }
+
+  function actualizarCamposBandeja(eleccion) {
+    const esTarjeta = eleccion === 'DS' || eleccion === 'DSC' || eleccion === 'DSP' || eleccion === 'FDS';
+    const permiteSem = eleccion === 'S' || eleccion === 'DS';
+    const cardRow = document.getElementById('bandejaTarjetaRow');
+    const sem = document.getElementById('bandejaSem');
+    const semRow = document.getElementById('bandejaSemRow');
+    if (cardRow) cardRow.style.display = esTarjeta ? '' : 'none';
+    if (sem && semRow) {
+      if (!permiteSem) sem.checked = false;
+      sem.disabled = !permiteSem;
+      semRow.style.opacity = permiteSem ? '1' : '0.42';
+    }
   }
 
   function continuarBandejaItem(id) {
@@ -18098,6 +18136,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (!estadoBandeja().pendientes.some(it => it.id === id)) { closeModal(); toast('Ese consumo ya está registrado'); renderLog(); return; }
     const eleccion = document.querySelector('input[name="bandejaTipo"]:checked')?.value || tipoSugeridoBandeja(item);
     let detalle = (document.getElementById('bandejaDetalle')?.value || '').trim() || detalleBandeja(item);
+    const categoria = normalizarCategoriaMovimiento(document.getElementById('bandejaCategoria')?.value);
+    const tarjetaId = normalizarTarjetaId(document.getElementById('bandejaTarjeta')?.value || tarjetaBandeja(item));
+    const sem = !!document.getElementById('bandejaSem')?.checked && (eleccion === 'S' || eleccion === 'DS');
 
     const fecha = new Date(item.fechaISO);
     const inicioCiclo = state.fechaInicioCiclo ? inicioDelDia(new Date(state.fechaInicioCiclo)) : null;
@@ -18113,16 +18154,18 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       tipoCambio = rate;
       detalle = `${detalle} · USD ${Number(item.monto).toFixed(2)} @ ${rate.toFixed(3)}`;
     }
-    const tipo = eleccion === 'S' ? 'S' : (eleccion === 'FDS' ? 'FDS' : 'DS');
-    if (tipo === 'FDS' && monto > state.montoIntocable + 0.005) { toast(`El fondo solo tiene S/ ${fmt(state.montoIntocable)}`, true); return; }
+    const tipo = eleccion === 'S' ? 'S' : (eleccion === 'F' ? 'F' : (eleccion === 'FDS' ? 'FDS' : 'DS'));
+    if ((tipo === 'F' || tipo === 'FDS') && monto > state.montoIntocable + 0.005) { toast(`El fondo solo tiene S/ ${fmt(state.montoIntocable)}`, true); return; }
 
     bandejaRegistroEnCurso = { id: item.id, monto, desde: Date.now() };
     closeModal();
-    openQuickMovementCategory({
+    finalizarQuickMovement({
       monto,
       tipo,
-      etiqueta: null,
+      etiqueta: sem ? 'sem' : null,
       detalle,
+      categoria,
+      tarjetaId,
       cubierto: eleccion === 'DSC',
       cuotaPropia: eleccion === 'DSP',
       monedaOriginal: esUsd ? 'USD' : 'PEN',
@@ -18130,7 +18173,6 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       tipoCambio,
       fechaMovimiento: fecha.toISOString()
     });
-    if (pendingQuickMovement) pendingQuickMovement.tarjetaSugerida = tarjetaBandeja(item);
   }
 
   function descartarBandejaItem(id) {

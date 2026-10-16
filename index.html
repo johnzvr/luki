@@ -8087,7 +8087,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '312';
+  const LEDGER_BUILD = '313';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -17898,7 +17898,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       bandejaCargando = true;
       bandejaUltimaCarga = Date.now();
-      const data = await bridgeCall({ action: 'bandeja' }, { timeoutMs: 20000 });
+      // BUILD313 · revisar: el puente lee Gmail en ese momento, sin esperar su revisión de cada 10 min.
+      const data = await bridgeCall({ action: 'bandeja', revisar: true }, { timeoutMs: 40000 });
       if (!data || !data.ok) return; // puente antiguo o sin lector: la bandeja queda oculta
       bandejaDatos = { items: Array.isArray(data.items) ? data.items : [], revisado: data.revisado || null, at: Date.now() };
       try { localStorage.setItem(BANDEJA_CACHE_STORAGE, JSON.stringify(bandejaDatos)); } catch (e) {}

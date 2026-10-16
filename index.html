@@ -6876,9 +6876,10 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
   color: var(--ink-dim) !important;
 }
 .ledger-arc-ui .log-dot.PROY {
-  background: var(--available-soft);
-  color: var(--ink-dim);
-  border: 1px dashed var(--line-hi);
+  /* BUILD316 · invertido (fondo oscuro, letra clara) para separar proyectados y por confirmar de los movimientos reales */
+  background: var(--ink-dim);
+  color: var(--bg);
+  border: 1px solid var(--ink-dim);
   font-size: 8px;
   letter-spacing: .02em;
 }
@@ -8087,7 +8088,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '315';
+  const LEDGER_BUILD = '316';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {

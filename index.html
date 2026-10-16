@@ -8087,7 +8087,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '313';
+  const LEDGER_BUILD = '314';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -18010,12 +18010,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const banco = tarjetaBandeja(item);
     const origen = item.clase === 'plin' ? (item.credito ? 'Plin TC' : 'Plin cuenta') : (item.credito ? '' : 'Débito');
     return `
-      <div class="log-item bandeja-item${registrado ? ' bandeja-registrado' : ''}"${registrado ? '' : ` data-id="${escapeHtml(item.id)}" onclick="openBandejaItem(this.dataset.id)"`}>
+      <div class="log-item projected-movement bandeja-item${registrado ? ' bandeja-registrado' : ''}"${registrado ? '' : ` data-id="${escapeHtml(item.id)}" onclick="openBandejaItem(this.dataset.id)"`}>
         <div class="log-left">
-          <div class="log-dot ${registrado ? 'PROY' : tipo}">${registrado ? '✓' : tipo}</div>
+          <div class="log-dot PROY">${registrado ? '✓' : tipo}</div>
           <div class="log-info">
             <div class="log-detail">${escapeHtml(detalleBandeja(item))}</div>
-            <div class="log-meta"><span class="card-bank-badge bank-${banco}">${escapeHtml(nombreTarjeta(banco))}</span><span>${escapeHtml(fechaBandejaTexto(item))}</span>${origen ? `<span>${origen}</span>` : ''}${registrado ? '<span class="projected-status">Ya registrado</span>' : ''}</div>
+            <div class="log-meta"><span class="projected-status">${registrado ? 'Ya registrado' : 'Por confirmar'}</span><span class="card-bank-badge bank-${banco}">${escapeHtml(nombreTarjeta(banco))}</span><span>${escapeHtml(fechaBandejaTexto(item))}</span>${origen ? `<span>${origen}</span>` : ''}</div>
           </div>
         </div>
         <div class="log-right"><div class="log-amount">${montoBandejaTexto(item)}</div></div>

@@ -8087,7 +8087,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '311';
+  const LEDGER_BUILD = '312';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -18023,8 +18023,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function appendBandejaSummary(root) {
     if (!root || movementBankFilter !== 'all' || !bridgeActive()) return 0;
-    const { pendientes, registrados } = estadoBandeja();
-    if (!pendientes.length && !registrados.length) return 0;
+    // BUILD312 · solo lo pendiente: lo ya registrado desaparece y, sin pendientes, no hay desplegable.
+    const { pendientes } = estadoBandeja();
+    if (!pendientes.length) return 0;
     const soles = redondearDinero(pendientes.filter(it => it.moneda !== 'USD').reduce((s, it) => s + Number(it.monto), 0));
     const dolares = redondearDinero(pendientes.filter(it => it.moneda === 'USD').reduce((s, it) => s + Number(it.monto), 0));
     const total = [soles > 0 ? `S/ ${fmt(soles)}` : '', dolares > 0 ? `US$ ${fmt(dolares)}` : ''].filter(Boolean).join(' · ');
@@ -18035,15 +18036,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     menu.addEventListener('toggle', () => { bandejaMenuOpen = menu.open; });
     const head = document.createElement('summary');
     head.className = 'projected-movements-head';
-    head.innerHTML = `<span class="projected-movements-label"><span class="projected-movements-chevron">›</span><span>Por confirmar · ${pendientes.length}</span></span><span class="projected-movements-total">${pendientes.length ? total : 'Al día'}</span>`;
+    head.innerHTML = `<span class="projected-movements-label"><span class="projected-movements-chevron">›</span><span>Por confirmar · ${pendientes.length}</span></span><span class="projected-movements-total">${total}</span>`;
     menu.appendChild(head);
     const body = document.createElement('div');
     body.className = 'projected-movements-body';
-    body.innerHTML = pendientes.map(it => filaBandejaHtml(it, false)).join('') +
-      registrados.slice(0, 10).map(it => filaBandejaHtml(it, true)).join('');
+    body.innerHTML = pendientes.map(it => filaBandejaHtml(it, false)).join('');
     menu.appendChild(body);
     root.appendChild(menu);
-    return pendientes.length + registrados.length;
+    return pendientes.length;
   }
 
   function openBandejaItem(id) {

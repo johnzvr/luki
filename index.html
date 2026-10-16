@@ -6849,6 +6849,24 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 .projected-movements-body {
   display: block;
 }
+/* BUILD311 · bandeja de correos del banco */
+.bandeja-item { cursor: pointer; }
+.bandeja-item.bandeja-registrado { cursor: default; opacity: .55; }
+.bandeja-item .log-meta { flex-wrap: wrap; }
+.bandeja-descartar {
+  display: block;
+  margin: 14px auto 0;
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  color: var(--ink-mute);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
 .ledger-arc-ui .log-item.projected-movement,
 .ledger-arc-ui .log-swipe .log-item.projected-movement {
   background: var(--bg);
@@ -8069,7 +8087,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '310';
+  const LEDGER_BUILD = '311';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -8362,6 +8380,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const nextView = Math.max(0, Math.min(3, Number(index) || 0));
     if (nextView !== currentView) {
       projectedMenuOpen = false;
+      bandejaMenuOpen = false; // BUILD311
       document.querySelectorAll('.projected-movements-menu').forEach(menu => { menu.open = false; });
     }
     currentView = nextView;
@@ -11660,6 +11679,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     let proyectadosPintados = 0;
     try { proyectadosPintados = appendProjectedMovementsSummary(logEl); }
     catch (error) { console.error('[Luki] Proyectados:', error); }
+    // BUILD311 · consumos leídos de los correos del banco, por confirmar.
+    try { proyectadosPintados += appendBandejaSummary(logEl); }
+    catch (error) { console.error('[Luki] Bandeja:', error); }
 
     if (state.log.length === 0 && recientesAnteriores.length === 0 && planesActivos.length === 0 && proyectadosPintados === 0) {
       const empty = document.createElement('div');
@@ -17852,6 +17874,273 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   
   let pendingQuickMovement = null;
 
+  // ============ BUILD311 · BANDEJA DE CORREOS DEL BANCO ============
+  // El puente lee (solo lectura) las alertas de consumo de Interbank y BCP y las deja
+  // en luki-bandeja.json. Aquí solo se MUESTRAN: nada se registra sin que lo confirmes.
+  // Regla de oro: un correo ya registrado (vinculado o coincidente con un movimiento
+  // tuyo) nunca se ofrece otra vez. Cada movimiento cubre como máximo un correo.
+  var BANDEJA_CACHE_STORAGE = 'luki-bandeja-cache';
+  var BANDEJA_INICIO_DEFECTO = '2026-10-15T20:35:00-05:00'; // opción A: solo consumos desde la activación
+  var BANDEJA_MIN_MS_ENTRE_CARGAS = 60000;
+  var bandejaDatos = (() => {
+    try { return JSON.parse(localStorage.getItem(BANDEJA_CACHE_STORAGE) || 'null') || { items: [] }; }
+    catch (e) { return { items: [] }; }
+  })();
+  var bandejaCargando = false;
+  var bandejaUltimaCarga = 0;
+  var bandejaMenuOpen = false;
+  var bandejaRegistroEnCurso = null; // { id, monto, desde } mientras confirmas un correo
+
+  async function actualizarBandeja({ force = false } = {}) {
+    try {
+      if (!bridgeActive() || bandejaCargando) return;
+      if (!force && Date.now() - bandejaUltimaCarga < BANDEJA_MIN_MS_ENTRE_CARGAS) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      bandejaCargando = true;
+      bandejaUltimaCarga = Date.now();
+      const data = await bridgeCall({ action: 'bandeja' }, { timeoutMs: 20000 });
+      if (!data || !data.ok) return; // puente antiguo o sin lector: la bandeja queda oculta
+      bandejaDatos = { items: Array.isArray(data.items) ? data.items : [], revisado: data.revisado || null, at: Date.now() };
+      try { localStorage.setItem(BANDEJA_CACHE_STORAGE, JSON.stringify(bandejaDatos)); } catch (e) {}
+      try { renderLog(); } catch (e) {}
+    } catch (e) {
+      console.warn('[Luki] Bandeja:', e && e.message);
+    } finally {
+      bandejaCargando = false;
+    }
+  }
+
+  // Solo el movimiento creado desde la bandeja (mismo monto, en los siguientes 15 min) queda vinculado.
+  function origenCorreoParaMovimiento(monto) {
+    const p = bandejaRegistroEnCurso;
+    if (!p) return {};
+    if (Date.now() - p.desde > 15 * 60000) { bandejaRegistroEnCurso = null; return {}; }
+    if (Math.abs((Number(monto) || 0) - p.monto) > 0.011) return {};
+    bandejaRegistroEnCurso = null;
+    return { origenCorreo: p.id };
+  }
+
+  function tarjetaBandeja(item) { return item?.banco === 'bcp' ? 'bcp' : 'interbank'; }
+  function tipoSugeridoBandeja(item) { return item?.credito ? 'DS' : 'S'; }
+
+  function detalleBandeja(item) {
+    const nombre = String(item?.comercio || '').trim();
+    if (item?.clase === 'plin') return nombre ? `Plin · ${nombre}` : 'Plin';
+    return nombre || 'Consumo';
+  }
+
+  function montoBandejaTexto(item) {
+    return item?.moneda === 'USD' ? `US$ ${fmt(item.monto)}` : `S/ ${fmt(item.monto)}`;
+  }
+
+  function fechaBandejaTexto(item) {
+    const f = new Date(item?.fechaISO);
+    if (Number.isNaN(f.getTime())) return '';
+    return f.toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function movimientosParaConciliarBandeja(desdeMs) {
+    const lista = [];
+    const agregar = mov => {
+      if (!mov || mov.etiqueta === 'recalcula' || esMovimientoProyectado(mov)) return;
+      if (fechaRegistroMovimiento(mov).getTime() < desdeMs - 4 * 86400000) return;
+      lista.push(mov);
+    };
+    (Array.isArray(state.log) ? state.log : []).forEach(agregar);
+    try { getArchivedCycles().slice(0, 2).forEach(c => (Array.isArray(c?.movimientos) ? c.movimientos : []).forEach(agregar)); } catch (e) {}
+    return lista;
+  }
+
+  function coincideMovimientoBandeja(item, mov) {
+    const tipo = normalizarTipoMovimiento(mov.tipo);
+    if (item.credito) {
+      if (!esMovimientoTarjeta(mov) || normalizarTarjetaId(mov.tarjetaId) !== tarjetaBandeja(item)) return false;
+    } else if (tipo !== 'S' && tipo !== 'F') {
+      return false;
+    }
+    const info = infoMonedaOriginalMovimiento(mov);
+    if (item.moneda === 'USD') {
+      if (info.moneda !== 'USD' || Math.abs(Number(info.montoOriginal) - Number(item.monto)) > 0.011) return false;
+    } else if (info.moneda === 'USD' || Math.abs(Number(mov.monto) - Number(item.monto)) > 0.011) {
+      return false;
+    }
+    const diff = Math.abs(fechaRegistroMovimiento(mov).getTime() - new Date(item.fechaISO).getTime());
+    return diff <= 3 * 86400000;
+  }
+
+  function estadoBandeja() {
+    const desdeMs = new Date(state.bandejaDesde || BANDEJA_INICIO_DEFECTO).getTime();
+    const descartados = new Set(Array.isArray(state.bandejaDescartados) ? state.bandejaDescartados : []);
+    const items = (Array.isArray(bandejaDatos?.items) ? bandejaDatos.items : [])
+      .filter(it => it && it.id && Number(it.monto) > 0 && !Number.isNaN(new Date(it.fechaISO).getTime()))
+      .filter(it => new Date(it.fechaISO).getTime() >= desdeMs && !descartados.has(it.id))
+      .sort((a, b) => String(a.fechaISO).localeCompare(String(b.fechaISO)));
+    const movs = movimientosParaConciliarBandeja(desdeMs);
+    const usados = new Set();
+    const registrado = new Map();
+    // 1) Vínculo explícito: movimientos creados desde la bandeja.
+    items.forEach(it => {
+      const mov = movs.find(m => m.origenCorreo === it.id);
+      if (mov) { usados.add(mov); registrado.set(it.id, mov); }
+    });
+    // 2) Movimientos que registraste a mano: misma tarjeta/tipo, monto y fecha cercana (uno a uno).
+    items.forEach(it => {
+      if (registrado.has(it.id)) return;
+      let mejor = null, mejorDiff = Infinity;
+      movs.forEach(m => {
+        if (usados.has(m) || m.origenCorreo || !coincideMovimientoBandeja(it, m)) return;
+        const diff = Math.abs(fechaRegistroMovimiento(m).getTime() - new Date(it.fechaISO).getTime());
+        if (diff < mejorDiff) { mejor = m; mejorDiff = diff; }
+      });
+      if (mejor) { usados.add(mejor); registrado.set(it.id, mejor); }
+    });
+    return {
+      pendientes: items.filter(it => !registrado.has(it.id)).reverse(),
+      registrados: items.filter(it => registrado.has(it.id)).reverse()
+    };
+  }
+
+  function bandejaItemPorId(id) {
+    return (Array.isArray(bandejaDatos?.items) ? bandejaDatos.items : []).find(it => it && it.id === id) || null;
+  }
+
+  function filaBandejaHtml(item, registrado) {
+    const tipo = tipoSugeridoBandeja(item);
+    const banco = tarjetaBandeja(item);
+    const origen = item.clase === 'plin' ? (item.credito ? 'Plin TC' : 'Plin cuenta') : (item.credito ? '' : 'Débito');
+    return `
+      <div class="log-item bandeja-item${registrado ? ' bandeja-registrado' : ''}"${registrado ? '' : ` data-id="${escapeHtml(item.id)}" onclick="openBandejaItem(this.dataset.id)"`}>
+        <div class="log-left">
+          <div class="log-dot ${registrado ? 'PROY' : tipo}">${registrado ? '✓' : tipo}</div>
+          <div class="log-info">
+            <div class="log-detail">${escapeHtml(detalleBandeja(item))}</div>
+            <div class="log-meta"><span class="card-bank-badge bank-${banco}">${escapeHtml(nombreTarjeta(banco))}</span><span>${escapeHtml(fechaBandejaTexto(item))}</span>${origen ? `<span>${origen}</span>` : ''}${registrado ? '<span class="projected-status">Ya registrado</span>' : ''}</div>
+          </div>
+        </div>
+        <div class="log-right"><div class="log-amount">${montoBandejaTexto(item)}</div></div>
+      </div>`;
+  }
+
+  function appendBandejaSummary(root) {
+    if (!root || movementBankFilter !== 'all' || !bridgeActive()) return 0;
+    const { pendientes, registrados } = estadoBandeja();
+    if (!pendientes.length && !registrados.length) return 0;
+    const soles = redondearDinero(pendientes.filter(it => it.moneda !== 'USD').reduce((s, it) => s + Number(it.monto), 0));
+    const dolares = redondearDinero(pendientes.filter(it => it.moneda === 'USD').reduce((s, it) => s + Number(it.monto), 0));
+    const total = [soles > 0 ? `S/ ${fmt(soles)}` : '', dolares > 0 ? `US$ ${fmt(dolares)}` : ''].filter(Boolean).join(' · ');
+
+    const menu = document.createElement('details');
+    menu.className = 'projected-movements-menu bandeja-menu';
+    menu.open = bandejaMenuOpen;
+    menu.addEventListener('toggle', () => { bandejaMenuOpen = menu.open; });
+    const head = document.createElement('summary');
+    head.className = 'projected-movements-head';
+    head.innerHTML = `<span class="projected-movements-label"><span class="projected-movements-chevron">›</span><span>Por confirmar · ${pendientes.length}</span></span><span class="projected-movements-total">${pendientes.length ? total : 'Al día'}</span>`;
+    menu.appendChild(head);
+    const body = document.createElement('div');
+    body.className = 'projected-movements-body';
+    body.innerHTML = pendientes.map(it => filaBandejaHtml(it, false)).join('') +
+      registrados.slice(0, 10).map(it => filaBandejaHtml(it, true)).join('');
+    menu.appendChild(body);
+    root.appendChild(menu);
+    return pendientes.length + registrados.length;
+  }
+
+  function openBandejaItem(id) {
+    const item = bandejaItemPorId(id);
+    if (!item) return;
+    if (!estadoBandeja().pendientes.some(it => it.id === id)) { toast('Ese consumo ya está registrado'); renderLog(); return; }
+    const sugerido = tipoSugeridoBandeja(item);
+    const banco = tarjetaBandeja(item);
+    const rate = getExchangeRate();
+    const conversion = item.moneda === 'USD'
+      ? (rate ? ` ≈ S/ ${fmt(Number(item.monto) * rate)} @ ${rate.toFixed(3)}` : ' · sin tipo de cambio')
+      : '';
+    const opcion = (valor, texto, extra = '') => `
+          <label class="edit-type-option${extra}">
+            <input type="radio" name="bandejaTipo" value="${valor}" ${valor === sugerido ? 'checked' : ''}>
+            <span>${texto}</span>
+          </label>`;
+    openModal(`
+      <h2>Confirmar <span class="accent">consumo</span></h2>
+      <p class="modal-sub"><span class="card-bank-badge bank-${banco}">${escapeHtml(nombreTarjeta(banco))}</span> ${escapeHtml(fechaBandejaTexto(item))} · del correo del banco</p>
+      <div class="modal-field">
+        <label>Monto</label>
+        <div style="font-size:22px;font-weight:750;font-variant-numeric:tabular-nums;">${montoBandejaTexto(item)}<span style="font-size:12px;font-weight:600;color:var(--ink-mute);">${conversion}</span></div>
+      </div>
+      <div class="modal-field">
+        <label>Tipo</label>
+        <div class="edit-type-grid">
+          ${opcion('S', 'S · Contado')}
+          ${opcion('DS', 'DS · Tarjeta')}
+          ${opcion('DSC', 'DS+C · Cubierta')}
+          ${opcion('DSP', 'DS+P · 2 cuotas')}
+          ${opcion('FDS', 'F+DS · Fondo', ' fds')}
+        </div>
+      </div>
+      <div class="modal-field">
+        <label>Detalle</label>
+        <input type="text" id="bandejaDetalle" value="${escapeHtml(detalleBandeja(item))}" autocomplete="off">
+      </div>
+      <div class="modal-buttons">
+        <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn-primary" data-id="${escapeHtml(item.id)}" onclick="continuarBandejaItem(this.dataset.id)">Continuar</button>
+      </div>
+      <button type="button" class="bandeja-descartar" data-id="${escapeHtml(item.id)}" onclick="descartarBandejaItem(this.dataset.id)">Descartar este consumo</button>
+    `);
+  }
+
+  function continuarBandejaItem(id) {
+    const item = bandejaItemPorId(id);
+    if (!item) { closeModal(); return; }
+    if (!estadoBandeja().pendientes.some(it => it.id === id)) { closeModal(); toast('Ese consumo ya está registrado'); renderLog(); return; }
+    const eleccion = document.querySelector('input[name="bandejaTipo"]:checked')?.value || tipoSugeridoBandeja(item);
+    let detalle = (document.getElementById('bandejaDetalle')?.value || '').trim() || detalleBandeja(item);
+
+    const fecha = new Date(item.fechaISO);
+    const inicioCiclo = state.fechaInicioCiclo ? inicioDelDia(new Date(state.fechaInicioCiclo)) : null;
+    if (inicioCiclo && inicioDelDia(fecha) < inicioCiclo) { toast('Ese consumo es de antes del ciclo actual', true); return; }
+
+    const esUsd = item.moneda === 'USD';
+    let monto = Number(item.monto);
+    let tipoCambio = null;
+    if (esUsd) {
+      const rate = getExchangeRate();
+      if (!rate) { toast('Sin tipo de cambio · toca US$ en el registro y espera', true); return; }
+      monto = Number(item.monto) * rate;
+      tipoCambio = rate;
+      detalle = `${detalle} · USD ${Number(item.monto).toFixed(2)} @ ${rate.toFixed(3)}`;
+    }
+    const tipo = eleccion === 'S' ? 'S' : (eleccion === 'FDS' ? 'FDS' : 'DS');
+    if (tipo === 'FDS' && monto > state.montoIntocable + 0.005) { toast(`El fondo solo tiene S/ ${fmt(state.montoIntocable)}`, true); return; }
+
+    bandejaRegistroEnCurso = { id: item.id, monto, desde: Date.now() };
+    closeModal();
+    openQuickMovementCategory({
+      monto,
+      tipo,
+      etiqueta: null,
+      detalle,
+      cubierto: eleccion === 'DSC',
+      cuotaPropia: eleccion === 'DSP',
+      monedaOriginal: esUsd ? 'USD' : 'PEN',
+      montoOriginal: Number(item.monto),
+      tipoCambio,
+      fechaMovimiento: fecha.toISOString()
+    });
+    if (pendingQuickMovement) pendingQuickMovement.tarjetaSugerida = tarjetaBandeja(item);
+  }
+
+  function descartarBandejaItem(id) {
+    if (!id) return;
+    const lista = Array.isArray(state.bandejaDescartados) ? state.bandejaDescartados.slice() : [];
+    if (!lista.includes(id)) lista.push(id);
+    state.bandejaDescartados = lista.slice(-300);
+    closeModal();
+    toast('Descartado de la bandeja');
+    render();
+  }
+
   // ============ BUILD296 · CATEGORÍA Y TARJETA SUGERIDAS ============
   // Aprende de tus registros (ciclo actual, ciclos archivados y compras de tarjeta arrastradas).
   // Tolera mayúsculas, tildes, números y errores de tipeo. Solo preselecciona: tú confirmas.
@@ -17979,6 +18268,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function cancelQuickMovementCategory() {
     pendingQuickMovement = null;
+    bandejaRegistroEnCurso = null; // BUILD311
     closeModal();
     requestAnimationFrame(() => document.getElementById('inputAmount')?.focus());
   }
@@ -18139,6 +18429,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function processStructuredCommand(fechaMovimientoForzada = null) {
+    bandejaRegistroEnCurso = null; // BUILD311 · registro manual: sin vínculo con la bandeja
     const amountEl = document.getElementById('inputAmount');
     const detalleEl = document.getElementById('inputDetalle');
     const montoRaw = parseFloat(amountEl.value);
@@ -18439,6 +18730,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       fecha: ahora.toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
       fechaISO: ahora.toISOString(),
       timestamp: ahora.getTime(),
+      ...origenCorreoParaMovimiento(monto), // BUILD311 · vínculo con el correo del banco
       ...(metadata.planCuotasId ? {
         planCuotasId: metadata.planCuotasId,
         cuotaNumero: Number(metadata.cuotaNumero) || 1,
@@ -18583,6 +18875,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       fecha: ahora.toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
       fechaISO: ahora.toISOString(),
       timestamp: ahora.getTime(),
+      ...origenCorreoParaMovimiento(monto), // BUILD311 · vínculo con el correo del banco
       ...(metadata.planCuotasId ? {
         planCuotasId: metadata.planCuotasId,
         cuotaNumero: Number(metadata.cuotaNumero) || 1,
@@ -21746,9 +22039,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   initKeyboardHandling();
   initGoogleSync();
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') requestDriveFreshnessCheck({ notify: true });
+    if (document.visibilityState === 'visible') { requestDriveFreshnessCheck({ notify: true }); actualizarBandeja(); }
   });
-  window.addEventListener('focus', () => requestDriveFreshnessCheck({ notify: true }));
+  window.addEventListener('focus', () => { requestDriveFreshnessCheck({ notify: true }); actualizarBandeja(); });
+  setTimeout(() => actualizarBandeja({ force: true }), 1500); // BUILD311
   // BUILD292 · al recuperar señal, subir lo pendiente o volver a comparar.
   window.addEventListener('online', () => {
     if (uploadIsPending()) runAutoUpload();

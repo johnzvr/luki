@@ -8144,7 +8144,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '323';
+  const LEDGER_BUILD = '324';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -18244,6 +18244,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   // BUILD317 · un solo modal, como Editar movimiento: se llena todo y se registra de una vez.
   function openBandejaItem(id) {
+    bloqueLongPressTriggered = false; // BUILD324
     const item = bandejaItemPorId(id);
     if (!item) return;
     if (!estadoBandeja().pendientes.some(it => it.id === id)) { toast('Ese consumo ya está registrado'); renderLog(); return; }
@@ -18300,7 +18301,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </label>
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button class="btn-primary" data-id="${escapeHtml(item.id)}" onclick="continuarBandejaItem(this.dataset.id)">Registrar</button>
+        <button class="btn-primary" data-id="${escapeHtml(item.id)}" onclick="continuarBandejaItem(this.dataset.id)"
+          onpointerdown="startBandejaBloqueLongPress(event, this.dataset.id)"
+          onpointerup="cancelBloqueLongPress()"
+          onpointercancel="cancelBloqueLongPress()"
+          onpointerleave="cancelBloqueLongPress()"
+          oncontextmenu="return false"
+          title="Mantén presionado para elegir el bloque">Registrar</button>
       </div>
       <button type="button" class="bandeja-descartar" data-id="${escapeHtml(item.id)}" onclick="descartarBandejaItem(this.dataset.id)">Descartar este consumo</button>
     `);
@@ -18324,7 +18331,21 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     }
   }
 
-  function continuarBandejaItem(id) {
+  // BUILD324 · mantener presionado "Registrar" abre el selector de bloque (solo S/DS, actual o futuros).
+  function startBandejaBloqueLongPress(event, id) {
+    if (event?.pointerType === 'mouse' && event.button !== 0) return;
+    clearTimeout(bloqueLongPressTimer);
+    bloqueLongPressTriggered = false;
+    try { event?.currentTarget?.setPointerCapture?.(event.pointerId); } catch (e) {}
+    bloqueLongPressTimer = setTimeout(() => {
+      bloqueLongPressTimer = null;
+      // Si el tipo elegido no admite bloque (DS+C, F, F+DS), o está marcado "Repartir", no hace nada especial.
+      if (continuarBandejaItem(id, true) === true) bloqueLongPressTriggered = true;
+    }, 520);
+  }
+
+  function continuarBandejaItem(id, elegirBloque = false) {
+    if (!elegirBloque && bloqueLongPressTriggered) { bloqueLongPressTriggered = false; return; } // el click tras soltar el long press
     const item = bandejaItemPorId(id);
     if (!item) { closeModal(); return; }
     if (!estadoBandeja().pendientes.some(it => it.id === id)) { closeModal(); toast('Ese consumo ya está registrado'); renderLog(); return; }
@@ -18351,9 +18372,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const tipo = eleccion === 'S' ? 'S' : (eleccion === 'F' ? 'F' : (eleccion === 'FDS' ? 'FDS' : 'DS'));
     if ((tipo === 'F' || tipo === 'FDS') && monto > state.montoIntocable + 0.005) { toast(`El fondo solo tiene S/ ${fmt(state.montoIntocable)}`, true); return; }
 
-    bandejaRegistroEnCurso = { id: item.id, monto, desde: Date.now() };
-    closeModal();
-    finalizarQuickMovement({
+    const datosRegistro = {
       monto,
       tipo,
       etiqueta: sem ? 'sem' : null,
@@ -18366,7 +18385,18 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       montoOriginal: Number(item.monto),
       tipoCambio,
       fechaMovimiento: fecha.toISOString()
-    });
+    };
+    if (elegirBloque) {
+      if (!puedeElegirBloqueMovimiento(datosRegistro)) return false;
+      pendingQuickMovement = datosRegistro;
+      bandejaRegistroEnCurso = { id: item.id, monto, desde: Date.now() };
+      bloqueSelectorAbiertoEn = Date.now();
+      mostrarSelectorBloqueMovimiento();
+      return true;
+    }
+    bandejaRegistroEnCurso = { id: item.id, monto, desde: Date.now() };
+    closeModal();
+    finalizarQuickMovement(datosRegistro);
   }
 
   function descartarBandejaItem(id) {
@@ -18544,6 +18574,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         document.getElementById('quickRegisterMovementCategory')?.value
       );
     }
+    mostrarSelectorBloqueMovimiento();
+  }
+
+  // BUILD324 · vista del selector (la usan el registro manual y "Por confirmar").
+  function mostrarSelectorBloqueMovimiento() {
+    if (!pendingQuickMovement) return;
     const fecha = pendingQuickMovement.fechaMovimiento ? new Date(pendingQuickMovement.fechaMovimiento) : new Date();
     const cur = calcularSemanaIdxParaFecha(fecha);
     const rangos = calcularRangoSemanas();

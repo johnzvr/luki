@@ -6888,6 +6888,17 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
   font-size: 8px;
   letter-spacing: .02em;
 }
+/* BUILD320 · transferencias entre tus cuentas: fondo gris, ícono en contorno, sin acción */
+.self-transfer-movement { cursor: default; }
+.self-transfer-movement .log-meta { flex-wrap: wrap; }
+.log-dot.self-transfer-dot,
+.ledger-arc-ui .log-dot.self-transfer-dot {
+  background: transparent;
+  color: var(--ink-dim);
+  border: 1px dashed var(--ink-mute);
+  font-size: 12px;
+  font-weight: 700;
+}
 .projected-status {
   display: inline-flex;
   align-items: center;
@@ -8093,7 +8104,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '319';
+  const LEDGER_BUILD = '320';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11692,7 +11703,18 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     try { proyectadosPintados += appendBandejaSummary(logEl); }
     catch (error) { console.error('[Luki] Bandeja:', error); }
 
-    if (state.log.length === 0 && recientesAnteriores.length === 0 && planesActivos.length === 0 && proyectadosPintados === 0) {
+    // BUILD320 · transferencias propias intercaladas por fecha (solo informativas).
+    let transferenciasPropias = [];
+    try { transferenciasPropias = transferenciasPropiasVisibles(); }
+    catch (error) { console.error('[Luki] Transferencias propias:', error); }
+    const insertarTransferenciasHasta = (tiempoMinimo) => {
+      while (transferenciasPropias.length && transferenciasPropias[0].tiempo >= tiempoMinimo) {
+        try { logEl.appendChild(filaTransferenciaPropiaElement(transferenciasPropias.shift().item)); }
+        catch (error) { console.error('[Luki] Transferencia propia no renderizada:', error); }
+      }
+    };
+
+    if (state.log.length === 0 && recientesAnteriores.length === 0 && planesActivos.length === 0 && proyectadosPintados === 0 && transferenciasPropias.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty';
       empty.textContent = 'Sin movimientos aún';
@@ -11744,6 +11766,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         ? (pagosTarjeta.porIndice.get(idx) || grupoPagoParaMovimiento(mov, idx, state.fechaInicioCiclo, pagosTarjeta.grupos))
         : null;
 
+      // BUILD320 · las transferencias propias más recientes que este movimiento van antes.
+      insertarTransferenciasHasta(fechaRegistroMovimiento(mov, fechaMovimiento).getTime());
+
       // BUILD237: la pareja vencida entra por fecha de cierre, no por el banco
       // del movimiento. Por eso Interbank y BCP permanecen juntos.
       insertarEstadosAnterioresAntesDe(fechaMovimiento);
@@ -11790,6 +11815,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         console.error('[Luki] Movimiento actual no renderizado:', error, mov);
       }
     });
+    // BUILD320 · las que quedan son más antiguas que todo el ciclo visible.
+    insertarTransferenciasHasta(-Infinity);
     if (recientesAnteriores.length > 0) {
       const marker = document.createElement('div');
       marker.className = 'previous-cycle-marker';
@@ -17935,8 +17962,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   // BUILD319 · Plin desde tu cuenta a tu propio nombre = mover plata entre tus cuentas, no es gasto.
   // Lo que cuenta es el consumo final (débito BCP o Yape), que llega por su propio correo.
   // "JOHNNY ZAVALA CHAMORRO" es otra persona: solo "John … Zavala" cuenta como propio.
+  // BUILD320 · también Yape a tu propio nombre (yapeo a tu otra cuenta).
   function esTransferenciaPropiaBandeja(item) {
-    if (!item || item.clase !== 'plin' || item.credito) return false;
+    if (!item || item.credito || (item.clase !== 'plin' && item.clase !== 'yape')) return false;
     const n = String(item.comercio || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
     return n[0] === 'john' && n.includes('zavala');
   }
@@ -18039,6 +18067,38 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>
         <div class="log-right"><div class="log-amount">${montoBandejaTexto(item)}</div></div>
       </div>`;
+  }
+
+  // BUILD320 · transferencias a tu propio nombre (Plin desde cuenta o Yape): solo informativas.
+  // Se ven en Movimientos por su fecha, en gris. No están en state: no tocan Disponible,
+  // bloques, deuda ni Fondo, no se sincronizan y no se pueden editar.
+  function transferenciasPropiasVisibles() {
+    if (movementBankFilter !== 'all' || !bridgeActive()) return [];
+    const desdeMs = Math.max(
+      new Date(state.bandejaDesde || BANDEJA_INICIO_DEFECTO).getTime() || 0,
+      new Date(state.fechaInicioCiclo).getTime() || 0
+    );
+    return (Array.isArray(bandejaDatos?.items) ? bandejaDatos.items : [])
+      .filter(it => it && it.id && Number(it.monto) > 0 && esTransferenciaPropiaBandeja(it))
+      .map(it => ({ item: it, tiempo: new Date(it.fechaISO).getTime() }))
+      .filter(t => Number.isFinite(t.tiempo) && t.tiempo >= desdeMs)
+      .sort((a, b) => b.tiempo - a.tiempo);
+  }
+
+  function filaTransferenciaPropiaElement(item) {
+    const div = document.createElement('div');
+    div.className = 'log-item projected-movement self-transfer-movement';
+    const origen = item.clase === 'yape' ? 'Yape' : 'Plin cuenta';
+    div.innerHTML = `
+      <div class="log-left">
+        <div class="log-dot self-transfer-dot">↔</div>
+        <div class="log-info">
+          <div class="log-detail">${escapeHtml(detalleBandeja(item))}</div>
+          <div class="log-meta"><span class="projected-status">Entre tus cuentas</span><span class="card-bank-badge">${escapeHtml(nombreTarjeta(tarjetaBandeja(item)))}</span><span>${escapeHtml(fechaBandejaTexto(item))}</span><span>${origen}</span></div>
+        </div>
+      </div>
+      <div class="log-right"><div class="log-amount">${item.moneda === 'USD' ? 'US$' : 'S/'}${fmt(item.monto)}</div></div>`;
+    return div;
   }
 
   function appendBandejaSummary(root) {

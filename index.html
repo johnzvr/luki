@@ -8144,7 +8144,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '322';
+  const LEDGER_BUILD = '323';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12516,6 +12516,63 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return { currentIdx, exceso, futuros };
   }
 
+  // BUILD323 · valida el bloque elegido: solo bloques FUTUROS respecto de la fecha del gasto
+  // y nunca con "sem" (que ya reparte entre todos). Devuelve el índice o null.
+  function bloqueElegidoValido(idx, fecha, etiqueta) {
+    if (idx === null || idx === undefined || etiqueta === 'sem') return null;
+    const k = Number(idx);
+    if (!Number.isInteger(k)) return null;
+    const cur = calcularSemanaIdxParaFecha(fecha || new Date());
+    return cur >= 0 && k > cur && k < state.semanas.length ? k : null;
+  }
+
+  // BUILD323 · gasto a un bloque elegido (futuro). Resta solo de ese bloque.
+  // Si lo excede, rollover de siempre: el bloque queda en 0 y el resto del Gastable se
+  // reparte entre los bloques posteriores a él. El bloque actual y los intermedios no cambian.
+  function aplicarGastoEnBloqueElegido(semanas, monto, totalDisponibleDespues, metaResidual, bloqueIdx, fechaReferencia = new Date()) {
+    if (!Array.isArray(semanas) || semanas.length === 0) return { currentIdx: -1, exceso: monto, futuros: [] };
+    const rangos = calcularRangoSemanas();
+    const currentIdx = calcularSemanaIdxParaFecha(fechaReferencia, rangos);
+    if (currentIdx < 0 || currentIdx >= semanas.length) return { currentIdx: -1, exceso: monto, futuros: [] };
+    const k = Number(bloqueIdx);
+    if (!Number.isInteger(k) || k <= currentIdx || k >= semanas.length) {
+      return aplicarGastoEnBloques(semanas, monto, totalDisponibleDespues, metaResidual, null, fechaReferencia);
+    }
+    const disponibleBloque = Math.max(0, Number(semanas[k]?.presupuesto) || 0);
+    if (monto <= disponibleBloque) {
+      semanas[k].presupuesto = disponibleBloque - monto;
+      return { currentIdx, bloqueIdx: k, exceso: 0, futuros: [] };
+    }
+    const exceso = monto - disponibleBloque;
+    semanas[k].presupuesto = 0;
+    semanas[k].exceso = (Number(semanas[k].exceso) || 0) + exceso;
+    const gastableDespues = Math.max(0, totalDisponibleDespues - (metaResidual || 0));
+    let futuros = [];
+    if (k + 1 < semanas.length) {
+      let conservado = 0;
+      for (let i = currentIdx; i < k; i++) conservado += Math.max(0, Number(semanas[i]?.presupuesto) || 0);
+      const restante = redondearDinero(Math.max(0, gastableDespues - conservado));
+      // Se reparte sobre una copia para no poner en 0 el bloque actual ni los intermedios.
+      const temp = JSON.parse(JSON.stringify(semanas));
+      futuros = distribuirEntreBloques(temp, restante, k + 1, rangos, fechaReferencia);
+      for (let i = k + 1; i < semanas.length; i++) {
+        semanas[i].presupuesto = temp[i].presupuesto;
+        semanas[i].presupuestoAsignado = temp[i].presupuestoAsignado;
+        semanas[i].diasRitmo = temp[i].diasRitmo;
+        semanas[i].ritmoDiarioFijo = temp[i].ritmoDiarioFijo;
+      }
+    }
+    // Cierre contable (igual que asegurarIntegridadBloques): si no quedan bloques después del
+    // elegido, o el reparto no alcanza, la diferencia se corrige solo en el bloque actual.
+    let sumaActivos = 0;
+    for (let i = currentIdx; i < semanas.length; i++) sumaActivos += Number(semanas[i]?.presupuesto) || 0;
+    const diferencia = redondearDinero(gastableDespues - redondearDinero(sumaActivos));
+    if (Math.abs(diferencia) > 0.005) {
+      semanas[currentIdx].presupuesto = redondearDinero((Number(semanas[currentIdx].presupuesto) || 0) + diferencia);
+    }
+    return { currentIdx, bloqueIdx: k, exceso, futuros };
+  }
+
   function applyMovementToSnapshot(snapshot, mov) {
     const next = cloneMovementSnapshot(snapshot);
     const monto = Number(mov?.monto);
@@ -12565,6 +12622,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         next.metaResidual,
         fechaMovimiento
       );
+    } else if (Number.isInteger(mov.bloqueElegido) && mov.etiqueta !== 'sem') {
+      // BUILD323 · gasto a un bloque elegido
+      aplicarGastoEnBloqueElegido(next.semanas, impactoPresupuesto, next.totalDisponible, next.metaResidual, mov.bloqueElegido, fechaMovimiento);
     } else {
       aplicarGastoEnBloques(next.semanas, impactoPresupuesto, next.totalDisponible, next.metaResidual, mov.etiqueta, fechaMovimiento);
     }
@@ -18422,9 +18482,121 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return { categoria: mejor(votosCat), tarjetaId: mejor(votosTarjeta) };
   }
 
+  // BUILD323 · elegir el bloque del gasto: mantener presionado el último "Guardar"
+  // (Categoría en S, Tarjeta en DS). Solo S/DS, bloque actual o futuros, sin "sem" ni retroactivo.
+  let bloqueLongPressTimer = null;
+  let bloqueLongPressTriggered = false;
+  let bloqueSelectorAbiertoEn = 0;
+
+  function puedeElegirBloqueMovimiento(datos) {
+    if (!datos) return false;
+    const tipo = normalizarTipoMovimiento(datos.tipo);
+    if (tipo !== 'S' && tipo !== 'DS') return false;
+    if (datos.cubierto || datos.etiqueta === 'sem') return false;
+    const f = datos.fechaMovimiento ? new Date(datos.fechaMovimiento) : new Date();
+    if (Number.isNaN(f.getTime())) return false;
+    if (inicioDelDia(f) < inicioDelDia(new Date())) return false; // el retroactivo ya cae en el bloque de su fecha
+    const cur = calcularSemanaIdxParaFecha(f);
+    return cur >= 0 && cur + 1 < state.semanas.length;
+  }
+
+  function botonGuardarQuickMovement(paso) {
+    const fn = paso === 'tarjeta' ? 'saveQuickMovementCard()' : 'saveQuickMovementCategory()';
+    const esUltimoPaso = paso === 'tarjeta' || !esMovimientoTarjeta(pendingQuickMovement?.tipo);
+    if (!esUltimoPaso || !puedeElegirBloqueMovimiento(pendingQuickMovement)) {
+      return `<button class="btn-primary" onclick="${fn}">Guardar</button>`;
+    }
+    return `<button class="btn-primary" onclick="${fn}"
+      onpointerdown="startBloqueLongPress(event, '${paso}')"
+      onpointerup="cancelBloqueLongPress()"
+      onpointercancel="cancelBloqueLongPress()"
+      onpointerleave="cancelBloqueLongPress()"
+      oncontextmenu="return false"
+      title="Mantén presionado para elegir el bloque">Guardar</button>`;
+  }
+
+  function startBloqueLongPress(event, paso) {
+    if (event?.pointerType === 'mouse' && event.button !== 0) return;
+    clearTimeout(bloqueLongPressTimer);
+    bloqueLongPressTriggered = false;
+    try { event?.currentTarget?.setPointerCapture?.(event.pointerId); } catch (e) {}
+    bloqueLongPressTimer = setTimeout(() => {
+      bloqueLongPressTimer = null;
+      abrirSelectorBloqueMovimiento(paso);
+    }, 520);
+  }
+
+  function cancelBloqueLongPress() {
+    clearTimeout(bloqueLongPressTimer);
+    bloqueLongPressTimer = null;
+  }
+
+  function abrirSelectorBloqueMovimiento(paso) {
+    if (!pendingQuickMovement || !puedeElegirBloqueMovimiento(pendingQuickMovement)) return;
+    bloqueLongPressTriggered = true; // el "click" que sigue al soltar no debe guardar el gasto
+    // Se conserva lo elegido en este paso antes de reemplazar el modal.
+    if (paso === 'tarjeta') {
+      pendingQuickMovement.tarjetaId = normalizarTarjetaId(
+        document.querySelector('input[name="quickMovementCard"]:checked')?.value
+      );
+    } else {
+      pendingQuickMovement.categoria = normalizarCategoriaMovimiento(
+        document.getElementById('quickRegisterMovementCategory')?.value
+      );
+    }
+    const fecha = pendingQuickMovement.fechaMovimiento ? new Date(pendingQuickMovement.fechaMovimiento) : new Date();
+    const cur = calcularSemanaIdxParaFecha(fecha);
+    const rangos = calcularRangoSemanas();
+    const opciones = [];
+    for (let i = cur; i < state.semanas.length; i++) {
+      const disp = Math.max(0, Number(state.semanas[i]?.presupuesto) || 0);
+      opciones.push(`
+        <label class="edit-type-option">
+          <input type="radio" name="quickMovementBlock" value="${i}" ${i === cur ? 'checked' : ''}>
+          <span>Bloque ${i + 1}${i === cur ? ' · actual' : ''} · ${rangos[i]?.dias || 7} días · S/ ${fmt(disp)}</span>
+        </label>`);
+    }
+    bloqueSelectorAbiertoEn = Date.now();
+    try { navigator.vibrate?.(12); } catch (e) {}
+    openModal(`
+      <h2>¿De qué <span class="accent">bloque</span> sale?</h2>
+      <p class="modal-sub">${escapeHtml(pendingQuickMovement.detalle || 'Sin detalle')} · <strong>S/ ${fmt(pendingQuickMovement.monto)}</strong></p>
+      <div class="modal-field">
+        <div class="edit-type-grid" style="grid-template-columns:1fr;">${opciones.join('')}</div>
+      </div>
+      <p class="modal-sub" style="font-size:11px;">Si excede el bloque, se aplica el rollover de siempre.</p>
+      <div class="modal-buttons">
+        <button class="btn-secondary" onclick="cancelarSelectorBloqueMovimiento()">Cancelar</button>
+        <button class="btn-primary" onclick="confirmarBloqueMovimiento()">Guardar</button>
+      </div>
+    `);
+  }
+
+  function cancelarSelectorBloqueMovimiento() {
+    if (Date.now() - bloqueSelectorAbiertoEn < 500) return; // ignora el soltado del long press
+    cancelQuickMovementCategory();
+  }
+
+  function confirmarBloqueMovimiento() {
+    if (Date.now() - bloqueSelectorAbiertoEn < 500) return; // ignora el soltado del long press
+    if (!pendingQuickMovement) {
+      closeModal();
+      return;
+    }
+    const idx = Number(document.querySelector('input[name="quickMovementBlock"]:checked')?.value);
+    const datos = { ...pendingQuickMovement };
+    if (Number.isInteger(idx)) datos.bloqueElegido = idx; // igual al actual se trata como sin elección
+    delete datos.tarjetaSugerida;
+    pendingQuickMovement = null;
+    bloqueLongPressTriggered = false;
+    closeModal();
+    finalizarQuickMovement(datos);
+  }
+
   function openQuickMovementCategory(datos) {
     pendingQuickMovement = datos ? { ...datos } : null;
     if (!pendingQuickMovement) return;
+    bloqueLongPressTriggered = false; // BUILD323
     let sugerencia = { categoria: '', tarjetaId: '' };
     try { sugerencia = sugerenciaMovimiento(pendingQuickMovement.detalle); } catch (e) {}
     pendingQuickMovement.tarjetaSugerida = sugerencia.tarjetaId || '';
@@ -18438,7 +18610,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </div>
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="cancelQuickMovementCategory()">Cancelar</button>
-        <button class="btn-primary" onclick="saveQuickMovementCategory()">Guardar</button>
+        ${botonGuardarQuickMovement('categoria')}
       </div>
     `);
     requestAnimationFrame(() => document.getElementById('quickRegisterMovementCategory')?.focus());
@@ -18452,6 +18624,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function saveQuickMovementCategory() {
+    if (bloqueLongPressTriggered) { bloqueLongPressTriggered = false; return; } // BUILD323
     if (!pendingQuickMovement) {
       closeModal();
       return;
@@ -18476,6 +18649,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function openQuickMovementCard(datos) {
     pendingQuickMovement = datos ? { ...datos } : pendingQuickMovement;
     if (!pendingQuickMovement) return;
+    bloqueLongPressTriggered = false; // BUILD323
     openModal(`
       <h2>Tarjeta</h2>
       <p class="modal-sub">${escapeHtml(pendingQuickMovement.detalle || 'Sin detalle')}</p>
@@ -18494,12 +18668,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </div>
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="cancelQuickMovementCategory()">Cancelar</button>
-        <button class="btn-primary" onclick="saveQuickMovementCard()">Guardar</button>
+        ${botonGuardarQuickMovement('tarjeta')}
       </div>
     `);
   }
 
   function saveQuickMovementCard() {
+    if (bloqueLongPressTriggered) { bloqueLongPressTriggered = false; return; } // BUILD323
     if (!pendingQuickMovement) {
       closeModal();
       return;
@@ -18528,7 +18703,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       monedaOriginal = 'PEN',
       montoOriginal = monto,
       tipoCambio = null,
-      fechaMovimiento = null
+      fechaMovimiento = null,
+      bloqueElegido = null // BUILD323
     } = datos;
     const fechaReal = fechaMovimiento ? new Date(fechaMovimiento) : new Date();
     if (Number.isNaN(fechaReal.getTime())) {
@@ -18544,11 +18720,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     // saldo ACTUAL del bloque para decidir rollover, porque eso falsearía el día elegido.
     if (!esRetroactivo && afectaPresupuestoSalarial({ tipo, cubierto }) && etiqueta !== 'sem') {
       const currentIdx = calcularSemanaIdxParaFecha(fechaReal);
-      const semActual = currentIdx >= 0 && currentIdx < state.semanas.length
-        ? state.semanas[currentIdx]
+      // BUILD323 · con bloque elegido, el rollover se evalúa contra ese bloque.
+      const bloqueEl = bloqueElegidoValido(bloqueElegido, fechaReal, etiqueta);
+      const idxCheck = bloqueEl !== null ? bloqueEl : currentIdx;
+      const semActual = idxCheck >= 0 && idxCheck < state.semanas.length
+        ? state.semanas[idxCheck]
         : null;
       if (semActual && impactoActual > (Number(semActual.presupuesto) || 0)) {
-        confirmarRollover(monto, tipo, etiqueta, detalle, categoria, tarjetaId, esDSP, monedaOriginal, montoOriginal, tipoCambio, fechaReal);
+        confirmarRollover(monto, tipo, etiqueta, detalle, categoria, tarjetaId, esDSP, monedaOriginal, montoOriginal, tipoCambio, fechaReal, bloqueEl);
         return;
       }
     }
@@ -18559,6 +18738,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       state.planesCuotas.push(creado.plan);
       const ok = aplicarMovimientoSegunFecha(monto, 'DS', etiqueta, detalle, {
         fecha: fechaReal,
+        bloqueElegido,
         renderizar: false,
         notificar: false,
         impactoPresupuesto: creado.actual,
@@ -18592,6 +18772,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     const ok = aplicarMovimientoSegunFecha(monto, tipo, etiqueta, detalle, {
       fecha: fechaReal,
+      bloqueElegido,
       metadata: {
         categoria,
         ...(tipo === 'DS' && cubierto ? { cubierto: true } : {}),
@@ -18693,32 +18874,47 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     document.getElementById('inputAmount').focus();
   }
   
-  function confirmarRollover(monto, tipo, etiqueta, detalle, categoria = '', tarjetaId = 'interbank', cuotaPropia = false, monedaOriginal = 'PEN', montoOriginal = null, tipoCambio = null, fechaMovimiento = new Date()) {
+  function confirmarRollover(monto, tipo, etiqueta, detalle, categoria = '', tarjetaId = 'interbank', cuotaPropia = false, monedaOriginal = 'PEN', montoOriginal = null, tipoCambio = null, fechaMovimiento = new Date(), bloqueElegido = null) {
     const ahora = new Date(fechaMovimiento);
     const impactoActual = cuotaPropia ? dividirCuotaPropia(monto).actual : monto;
     const semActualIdx = calcularSemanaIdxParaFecha(ahora);
     const semActual = semActualIdx >= 0 && semActualIdx < state.semanas.length ? state.semanas[semActualIdx] : null;
     if (!semActual) { toast('El ciclo ya terminó; inicia uno nuevo', true); return; }
-    const restanteSemActual = Math.max(0, Number(semActual.presupuesto) || 0);
+    // BUILD323 · bloque elegido (futuro): el exceso se mide contra ese bloque.
+    const bloqueEl = bloqueElegidoValido(bloqueElegido, ahora, etiqueta);
+    const idxObjetivo = bloqueEl !== null ? bloqueEl : semActualIdx;
+    const semObjetivo = state.semanas[idxObjetivo];
+    const restanteSemActual = Math.max(0, Number(semObjetivo.presupuesto) || 0);
     const exceso = Math.max(0, impactoActual - restanteSemActual);
     const semanasSimuladas = JSON.parse(JSON.stringify(state.semanas));
-    aplicarGastoEnBloques(
-      semanasSimuladas,
-      impactoActual,
-      state.totalDisponible - impactoActual,
-      state.metaResidual || 0,
-      etiqueta,
-      ahora
-    );
+    if (bloqueEl !== null) {
+      aplicarGastoEnBloqueElegido(
+        semanasSimuladas,
+        impactoActual,
+        state.totalDisponible - impactoActual,
+        state.metaResidual || 0,
+        bloqueEl,
+        ahora
+      );
+    } else {
+      aplicarGastoEnBloques(
+        semanasSimuladas,
+        impactoActual,
+        state.totalDisponible - impactoActual,
+        state.metaResidual || 0,
+        etiqueta,
+        ahora
+      );
+    }
 
     const desgloseHtml = [`
       <div class="rollover-row">
-        <span class="rollover-week">Bloque actual</span>
+        <span class="rollover-week">${bloqueEl !== null ? `Bloque ${bloqueEl + 1}` : 'Bloque actual'}</span>
         <span class="rollover-amount">S/ ${fmt(restanteSemActual)} → S/ 0.00</span>
       </div>
     `];
 
-    for (let i = semActualIdx + 1; i < state.semanas.length; i++) {
+    for (let i = idxObjetivo + 1; i < state.semanas.length; i++) {
       const anterior = Math.max(0, Number(state.semanas[i].presupuesto) || 0);
       const nuevo = Math.max(0, Number(semanasSimuladas[i].presupuesto) || 0);
       const reduccion = Math.max(0, anterior - nuevo);
@@ -18728,6 +18924,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <span class="rollover-amount">S/ ${fmt(nuevo)}${reduccion > 0 ? ` · −${fmt(reduccion)}` : ''}</span>
         </div>
       `);
+    }
+
+    // BUILD323 · si no quedan bloques después del elegido, la diferencia sale del bloque actual.
+    if (bloqueEl !== null) {
+      const antesActual = Math.max(0, Number(state.semanas[semActualIdx].presupuesto) || 0);
+      const despuesActual = Number(semanasSimuladas[semActualIdx].presupuesto) || 0;
+      if (Math.abs(antesActual - despuesActual) > 0.005) {
+        desgloseHtml.push(`
+        <div class="rollover-row highlight">
+          <span class="rollover-week">Bloque actual <span class="rollover-tag">cubre la diferencia</span></span>
+          <span class="rollover-amount">S/ ${fmt(despuesActual)} · −${fmt(antesActual - despuesActual)}</span>
+        </div>
+      `);
+      }
     }
 
     const fueraDelGastable = Math.max(0, impactoActual - Math.max(0, state.totalDisponible - (state.metaResidual || 0)));
@@ -18740,7 +18950,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const partes = cuotaPropia ? dividirCuotaPropia(monto) : null;
 
     openModal(`
-      <h2>Excede el <span class="accent">bloque actual</span></h2>
+      <h2>Excede el <span class="accent">${bloqueEl !== null ? `bloque ${bloqueEl + 1}` : 'bloque actual'}</span></h2>
       <p class="modal-sub">
         ${cuotaPropia
           ? `Tu DS+P de <strong>S/ ${fmt(monto)}</strong> carga <strong>S/ ${fmt(partes.actual)}</strong> a este ciclo y deja <strong>S/ ${fmt(partes.siguiente)}</strong> para el próximo. La parte actual excede este bloque en <strong>S/ ${fmt(exceso)}</strong>.`
@@ -18760,12 +18970,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button class="btn-primary" onclick='ejecutarConRollover(${monto}, ${JSON.stringify(tipo)}, ${etiqueta ? JSON.stringify(etiqueta) : "null"}, ${JSON.stringify(detalle)}, ${JSON.stringify(categoria)}, ${JSON.stringify(normalizarTarjetaId(tarjetaId))}, ${cuotaPropia ? 'true' : 'false'}, ${JSON.stringify(monedaOriginal || 'PEN')}, ${Number.isFinite(Number(montoOriginal)) ? Number(montoOriginal) : monto}, ${Number.isFinite(Number(tipoCambio)) ? Number(tipoCambio) : 'null'}, ${JSON.stringify(ahora.toISOString())})'>Confirmar gasto</button>
+        <button class="btn-primary" onclick='ejecutarConRollover(${monto}, ${JSON.stringify(tipo)}, ${etiqueta ? JSON.stringify(etiqueta) : "null"}, ${JSON.stringify(detalle)}, ${JSON.stringify(categoria)}, ${JSON.stringify(normalizarTarjetaId(tarjetaId))}, ${cuotaPropia ? 'true' : 'false'}, ${JSON.stringify(monedaOriginal || 'PEN')}, ${Number.isFinite(Number(montoOriginal)) ? Number(montoOriginal) : monto}, ${Number.isFinite(Number(tipoCambio)) ? Number(tipoCambio) : 'null'}, ${JSON.stringify(ahora.toISOString())}, ${bloqueEl !== null ? bloqueEl : 'null'})'>Confirmar gasto</button>
       </div>
     `);
   }
 
-  function ejecutarConRollover(monto, tipo, etiqueta, detalle, categoria = '', tarjetaId = 'interbank', cuotaPropia = false, monedaOriginal = 'PEN', montoOriginal = null, tipoCambio = null, fechaMovimiento = null) {
+  function ejecutarConRollover(monto, tipo, etiqueta, detalle, categoria = '', tarjetaId = 'interbank', cuotaPropia = false, monedaOriginal = 'PEN', montoOriginal = null, tipoCambio = null, fechaMovimiento = null, bloqueElegido = null) {
     closeModal();
     const fechaReal = fechaMovimiento ? new Date(fechaMovimiento) : new Date();
     if (cuotaPropia && normalizarTipoMovimiento(tipo) === 'DS') {
@@ -18774,6 +18984,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       state.planesCuotas.push(creado.plan);
       const ok = aplicarMovimientoSegunFecha(monto, 'DS', etiqueta === 'null' ? null : etiqueta, detalle, {
         fecha: fechaReal,
+        bloqueElegido,
         renderizar: false,
         notificar: false,
         impactoPresupuesto: creado.actual,
@@ -18810,6 +19021,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       detalle,
       {
         fecha: fechaReal,
+        bloqueElegido,
         metadata: {
           categoria: normalizarCategoriaMovimiento(categoria),
           ...(esMovimientoTarjeta(tipo) ? {
@@ -19136,6 +19348,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       return true;
     }
     
+    // BUILD323 · bloque elegido (solo S/DS que afectan el presupuesto, bloques futuros)
+    const bloqueEl = bloqueElegidoValido(opciones.bloqueElegido, ahora, etiqueta);
+    if (bloqueEl !== null && !opciones.soloBloqueActual && !opciones.redistribuirRestantes) mov.bloqueElegido = bloqueEl;
+
     state.totalDisponible -= impactoPresupuesto;
     state.gastoTotal += monto;
     if (tipo === 'S') state.gastoNoAdeudado += monto;
@@ -19143,6 +19359,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     const resultadoBloques = opciones.soloBloqueActual
       ? aplicarGastoSoloBloqueActual(state.semanas, impactoPresupuesto, ahora)
+      : mov.bloqueElegido !== undefined
+        ? aplicarGastoEnBloqueElegido(
+            state.semanas,
+            impactoPresupuesto,
+            state.totalDisponible,
+            state.metaResidual || 0,
+            mov.bloqueElegido,
+            ahora
+          )
       : opciones.redistribuirRestantes
         ? {
             currentIdx: Math.max(0, calcularSemanaIdxParaFecha(ahora)),
@@ -19172,6 +19397,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       toast(`Bloque actual excedido S/ ${fmt(resultadoBloques.exceso)} · futuros sin cambios`, true);
     } else if (notificar && resultadoBloques.exceso > 0) {
       toast(`Excediste S/ ${fmt(resultadoBloques.exceso)} · bloques futuros ajustados`, true);
+    } else if (notificar && mov.bloqueElegido !== undefined) {
+      toast(`−S/ ${fmt(impactoPresupuesto)} · Bloque ${mov.bloqueElegido + 1}`);
     } else if (notificar && opciones.soloBloqueActual) {
       toast(`−S/ ${fmt(impactoPresupuesto)} · solo bloque actual`);
     } else if (notificar) {

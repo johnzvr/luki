@@ -1707,8 +1707,15 @@
     border-color: #0030B3;
     color: #fff;
   }
+  /* BUILD321 · Yape */
+  .card-bank-badge.bank-yape {
+    background: #742284;
+    border-color: #742284;
+    color: #fff;
+  }
   body.dark .card-bank-badge.bank-interbank,
-  body.dark .card-bank-badge.bank-bcp {
+  body.dark .card-bank-badge.bank-bcp,
+  body.dark .card-bank-badge.bank-yape {
     color: #fff;
   }
   .tc-header {
@@ -8104,7 +8111,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '320';
+  const LEDGER_BUILD = '321';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -10429,6 +10436,21 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return `<span class="card-bank-badge${bankClass}">${escapeHtml(nombreTarjeta(tarjetaId))}</span>`;
   }
 
+  // BUILD321 · badge YAPE (solo visual) para gastos que salieron por Yape.
+  function esMovimientoYape(mov) {
+    if (!mov || esMovimientoTarjeta(mov) || esMovimientoProyectado(mov) || mov.etiqueta === 'recalcula') return false;
+    if (mov.origenCorreo) {
+      try {
+        const item = bandejaItemPorId(mov.origenCorreo);
+        if (item) return item.clase === 'yape';
+      } catch (e) {}
+    }
+    return /^yape\b/.test(String(mov.detalle || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase());
+  }
+  function badgeYapeMovimiento(mov) {
+    return esMovimientoYape(mov) ? '<span class="card-bank-badge bank-yape">Yape</span>' : '';
+  }
+
   let activeCreditCardIndex = 0;
 
   function scrollToCreditCard(index) {
@@ -11801,7 +11823,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <div class="log-dot ${dotType}">${dotLabel}</div>
           <div class="log-info">
             <div class="log-detail">${escapeHtml(mov.detalle || 'Sin detalle')}</div>
-            <div class="log-meta">${badge}${esMovimientoTarjeta(mov) ? badgeBancoMovimiento(mov) + badgePagoTarjeta(grupoPago) : ''}<span>${escapeHtml(mov.fecha)}</span></div>
+            <div class="log-meta">${badge}${esMovimientoTarjeta(mov) ? badgeBancoMovimiento(mov) + badgePagoTarjeta(grupoPago) : badgeYapeMovimiento(mov)}<span>${escapeHtml(mov.fecha)}</span></div>
           </div>
         </div>
         <div class="log-right">
@@ -11879,7 +11901,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
               <div class="log-dot ${dotType}">${dotLabel}</div>
               <div class="log-info">
                 <div class="log-detail">${escapeHtml(mov.detalle || 'Sin detalle')}</div>
-                <div class="log-meta">${badge}${esMovimientoTarjeta(mov) ? badgeBancoMovimiento(mov) + badgePagoTarjeta(grupoPago) : ''}<span>${escapeHtml(mov.fecha || '')}</span></div>
+                <div class="log-meta">${badge}${esMovimientoTarjeta(mov) ? badgeBancoMovimiento(mov) + badgePagoTarjeta(grupoPago) : badgeYapeMovimiento(mov)}<span>${escapeHtml(mov.fecha || '')}</span></div>
               </div>
             </div>
             <div class="log-right"><div class="log-amount">${logAmountText(mov)}</div></div>
@@ -12036,6 +12058,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       let bankMeta = '';
       try {
         if (esMovimientoTarjeta(mov)) bankMeta = badgeBancoMovimiento(mov) + badgePagoTarjeta(grupoPago);
+        else bankMeta = badgeYapeMovimiento(mov); // BUILD321
       } catch(e) {}
 
       const div = document.createElement('div');
@@ -13848,7 +13871,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
               <div class="log-dot ${dotType}">${dotLabel}</div>
               <div class="log-info">
                 <div class="log-detail">${escapeHtml(mov.detalle || 'Sin detalle')}</div>
-                <div class="log-meta">${esProyectado ? '<span class="projected-status">Reservado</span>' + metaMonedaProyectado : ''}${badge}${esMovimientoTarjeta(mov) ? badgeBancoMovimiento(mov) + badgePagoTarjeta(grupoPago) : ''}${esActual ? chipCategoriaMovimiento(mov, originalIdx) : chipCategoriaMovimiento(mov, -1)}${esProyectado ? '' : `<span class="log-date">${escapeHtml(mov.fecha)}</span>`}</div>
+                <div class="log-meta">${esProyectado ? '<span class="projected-status">Reservado</span>' + metaMonedaProyectado : ''}${badge}${esMovimientoTarjeta(mov) ? badgeBancoMovimiento(mov) + badgePagoTarjeta(grupoPago) : badgeYapeMovimiento(mov)}${esActual ? chipCategoriaMovimiento(mov, originalIdx) : chipCategoriaMovimiento(mov, -1)}${esProyectado ? '' : `<span class="log-date">${escapeHtml(mov.fecha)}</span>`}</div>
               </div>
             </div>
             <div class="log-right"><div class="log-amount">${logAmountText(mov)}</div></div>
@@ -18062,7 +18085,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <div class="log-dot PROY">${registrado ? '✓' : tipo}</div>
           <div class="log-info">
             <div class="log-detail">${escapeHtml(detalleBandeja(item))}</div>
-            <div class="log-meta"><span class="projected-status">${registrado ? 'Ya registrado' : 'Por confirmar'}</span><span class="card-bank-badge">${escapeHtml(nombreTarjeta(banco))}</span><span>${escapeHtml(fechaBandejaTexto(item))}</span>${origen ? `<span>${origen}</span>` : ''}</div>
+            <div class="log-meta"><span class="projected-status">${registrado ? 'Ya registrado' : 'Por confirmar'}</span><span class="card-bank-badge">${item.clase === 'yape' ? 'Yape' : escapeHtml(nombreTarjeta(banco))}</span><span>${escapeHtml(fechaBandejaTexto(item))}</span>${origen ? `<span>${origen}</span>` : ''}</div>
           </div>
         </div>
         <div class="log-right"><div class="log-amount">${montoBandejaTexto(item)}</div></div>
@@ -18094,7 +18117,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <div class="log-dot self-transfer-dot">↔</div>
         <div class="log-info">
           <div class="log-detail">${escapeHtml(detalleBandeja(item))}</div>
-          <div class="log-meta"><span class="projected-status">Entre tus cuentas</span><span class="card-bank-badge">${escapeHtml(nombreTarjeta(tarjetaBandeja(item)))}</span><span>${escapeHtml(fechaBandejaTexto(item))}</span><span>${origen}</span></div>
+          <div class="log-meta"><span class="projected-status">Entre tus cuentas</span><span class="card-bank-badge">${item.clase === 'yape' ? 'Yape' : escapeHtml(nombreTarjeta(tarjetaBandeja(item)))}</span><span>${escapeHtml(fechaBandejaTexto(item))}</span><span>${origen}</span></div>
         </div>
       </div>
       <div class="log-right"><div class="log-amount">${item.moneda === 'USD' ? 'US$' : 'S/'}${fmt(item.monto)}</div></div>`;

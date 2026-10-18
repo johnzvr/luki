@@ -8240,7 +8240,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '326';
+  const LEDGER_BUILD = '327';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12614,12 +12614,80 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   // BUILD323 · valida el bloque elegido: solo bloques FUTUROS respecto de la fecha del gasto
   // y nunca con "sem" (que ya reparte entre todos). Devuelve el índice o null.
+  // BUILD327 · también acepta una LISTA de bloques (actual y/o futuros). Devuelve:
+  // null (sin elección), un número (un bloque futuro) o un arreglo ordenado de 2+ bloques.
   function bloqueElegidoValido(idx, fecha, etiqueta) {
     if (idx === null || idx === undefined || etiqueta === 'sem') return null;
+    const cur = calcularSemanaIdxParaFecha(fecha || new Date());
+    if (Array.isArray(idx)) {
+      if (cur < 0) return null;
+      const lista = [...new Set(idx.map(Number).filter(n => Number.isInteger(n) && n >= cur && n < state.semanas.length))].sort((a, b) => a - b);
+      if (lista.length === 0) return null;
+      if (lista.length === 1) return lista[0] > cur ? lista[0] : null; // solo el actual = sin elección
+      return lista;
+    }
     const k = Number(idx);
     if (!Number.isInteger(k)) return null;
-    const cur = calcularSemanaIdxParaFecha(fecha || new Date());
     return cur >= 0 && k > cur && k < state.semanas.length ? k : null;
+  }
+
+  // BUILD327 · "Bloque 4" / "Bloques 4 y 5" / "Bloques 3, 4 y 5" para toasts y modales.
+  function etiquetaBloquesElegidos(valor) {
+    const lista = (Array.isArray(valor) ? valor : [valor]).map(n => Number(n) + 1).filter(Number.isFinite);
+    if (lista.length <= 1) return `Bloque ${lista[0] || ''}`.trim();
+    return `Bloques ${lista.slice(0, -1).join(', ')} y ${lista[lista.length - 1]}`;
+  }
+
+  // BUILD327 · como "sem", pero solo entre los bloques indicados: partes iguales; si un bloque
+  // no cubre su parte, el faltante se suma a la parte del siguiente bloque marcado.
+  function restarGastoDivididoEntreIndices(semanas, monto, indices) {
+    if (!Array.isArray(semanas) || !Array.isArray(indices) || indices.length === 0 || !(monto > 0)) {
+      return { cuota: 0, exceso: Math.max(0, Number(monto) || 0), repartos: [] };
+    }
+    const cuota = monto / indices.length;
+    const repartos = [];
+    let aplicado = 0;
+    let arrastre = 0;
+    indices.forEach((index, posicion) => {
+      const disponible = Math.max(0, Number(semanas[index]?.presupuesto) || 0);
+      const porRestar = posicion === indices.length - 1
+        ? Math.max(0, monto - aplicado)
+        : cuota + arrastre;
+      const descuento = Math.min(disponible, porRestar);
+      semanas[index].presupuesto = redondearDinero(disponible - descuento);
+      aplicado += descuento;
+      arrastre = Math.max(0, porRestar - descuento);
+      repartos.push({ index, descuento, presupuesto: semanas[index].presupuesto });
+    });
+    return { cuota, exceso: Math.max(0, redondearDinero(monto - aplicado)), repartos };
+  }
+
+  // BUILD327 · gasto repartido entre varios bloques elegidos (actual y/o futuros).
+  // El Disponible baja una sola vez (lo hace quien llama); aquí solo se mueven los bloques.
+  // Si ninguno alcanza, la diferencia la cubre el bloque actual (mismo cierre contable que un bloque elegido).
+  function aplicarGastoEnBloquesMultiples(semanas, monto, totalDisponibleDespues, metaResidual, indices, currentIdx) {
+    const lista = [...new Set((indices || []).map(Number).filter(n => Number.isInteger(n) && n >= currentIdx && n < semanas.length))].sort((a, b) => a - b);
+    const resultado = restarGastoDivididoEntreIndices(semanas, monto, lista);
+    if (resultado.exceso > 0.005) {
+      const ultimo = lista[lista.length - 1];
+      semanas[ultimo].exceso = redondearDinero((Number(semanas[ultimo].exceso) || 0) + resultado.exceso);
+      const gastableDespues = Math.max(0, totalDisponibleDespues - (metaResidual || 0));
+      let sumaActivos = 0;
+      for (let i = currentIdx; i < semanas.length; i++) sumaActivos += Number(semanas[i]?.presupuesto) || 0;
+      const diferencia = redondearDinero(gastableDespues - redondearDinero(sumaActivos));
+      if (Math.abs(diferencia) > 0.005) {
+        semanas[currentIdx].presupuesto = redondearDinero((Number(semanas[currentIdx].presupuesto) || 0) + diferencia);
+      }
+    }
+    return { currentIdx, bloqueIdx: lista, exceso: resultado.exceso, cuota: resultado.cuota, futuros: resultado.repartos };
+  }
+
+  // BUILD327 · cuánto faltaría cubrir si el gasto se reparte entre esos bloques (simulación, no guarda nada).
+  function excesoBloquesMultiples(monto, indices, fecha) {
+    const cur = calcularSemanaIdxParaFecha(fecha || new Date());
+    if (cur < 0 || cur >= state.semanas.length) return 0;
+    const sim = JSON.parse(JSON.stringify(state.semanas));
+    return aplicarGastoEnBloquesMultiples(sim, monto, state.totalDisponible - monto, state.metaResidual || 0, indices, cur).exceso;
   }
 
   // BUILD323 · gasto a un bloque elegido (futuro). Resta solo de ese bloque.
@@ -12630,6 +12698,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const rangos = calcularRangoSemanas();
     const currentIdx = calcularSemanaIdxParaFecha(fechaReferencia, rangos);
     if (currentIdx < 0 || currentIdx >= semanas.length) return { currentIdx: -1, exceso: monto, futuros: [] };
+    // BUILD327 · varios bloques elegidos: partes iguales entre ellos
+    if (Array.isArray(bloqueIdx)) {
+      return aplicarGastoEnBloquesMultiples(semanas, monto, totalDisponibleDespues, metaResidual, bloqueIdx, currentIdx);
+    }
     const k = Number(bloqueIdx);
     if (!Number.isInteger(k) || k <= currentIdx || k >= semanas.length) {
       return aplicarGastoEnBloques(semanas, monto, totalDisponibleDespues, metaResidual, null, fechaReferencia);
@@ -12718,8 +12790,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         next.metaResidual,
         fechaMovimiento
       );
-    } else if (Number.isInteger(mov.bloqueElegido) && mov.etiqueta !== 'sem') {
-      // BUILD323 · gasto a un bloque elegido
+    } else if ((Number.isInteger(mov.bloqueElegido) || (Array.isArray(mov.bloqueElegido) && mov.bloqueElegido.length > 1)) && mov.etiqueta !== 'sem') {
+      // BUILD323 · gasto a un bloque elegido (BUILD327 · o a varios)
       aplicarGastoEnBloqueElegido(next.semanas, impactoPresupuesto, next.totalDisponible, next.metaResidual, mov.bloqueElegido, fechaMovimiento);
     } else {
       aplicarGastoEnBloques(next.semanas, impactoPresupuesto, next.totalDisponible, next.metaResidual, mov.etiqueta, fechaMovimiento);
@@ -18682,10 +18754,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const opciones = [];
     for (let i = cur; i < state.semanas.length; i++) {
       const disp = Math.max(0, Number(state.semanas[i]?.presupuesto) || 0);
+      // BUILD327 · casillas: se pueden marcar varios bloques (partes iguales entre los marcados).
       opciones.push(`
         <label class="edit-type-option">
-          <input type="radio" name="quickMovementBlock" value="${i}" ${i === cur ? 'checked' : ''}>
-          <span>Bloque ${i + 1}${i === cur ? ' · actual' : ''} · ${rangos[i]?.dias || 7} días · S/ ${fmt(disp)}</span>
+          <input type="checkbox" name="quickMovementBlock" value="${i}" ${i === cur ? 'checked' : ''} onchange="actualizarReparticionBloques()">
+          <span>Bloque ${i + 1}${i === cur ? ' · actual' : ''} · ${rangos[i]?.dias || 7} días · S/ ${fmt(disp)}<b class="bloque-parte" data-i="${i}" style="margin-left:auto;padding-left:10px;font-weight:760;"></b></span>
         </label>`);
     }
     bloqueSelectorAbiertoEn = Date.now();
@@ -18696,12 +18769,38 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       <div class="modal-field">
         <div class="edit-type-grid" style="grid-template-columns:1fr;">${opciones.join('')}</div>
       </div>
-      <p class="modal-sub" style="font-size:11px;">Si excede el bloque, se aplica el rollover de siempre.</p>
+      <p class="modal-sub" id="bloqueRepartoNota" style="font-size:11px;">${TEXTO_BASE_SELECTOR_BLOQUE}</p>
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="cancelarSelectorBloqueMovimiento()">Cancelar</button>
         <button class="btn-primary" onclick="confirmarBloqueMovimiento()">Guardar</button>
       </div>
     `);
+  }
+
+  // BUILD327 · con 2+ bloques marcados, muestra cuánto resta de cada uno (partes iguales, el faltante pasa al siguiente marcado).
+  const TEXTO_BASE_SELECTOR_BLOQUE = 'Puedes marcar más de un bloque. Si excede el bloque, se aplica el rollover de siempre.';
+  function actualizarReparticionBloques() {
+    document.querySelectorAll('.bloque-parte').forEach(el => { el.textContent = ''; });
+    const nota = document.getElementById('bloqueRepartoNota');
+    const marcados = [...document.querySelectorAll('input[name="quickMovementBlock"]:checked')]
+      .map(el => Number(el.value)).filter(Number.isInteger).sort((a, b) => a - b);
+    if (!pendingQuickMovement || marcados.length < 2) {
+      if (nota) nota.textContent = TEXTO_BASE_SELECTOR_BLOQUE;
+      return;
+    }
+    const esDSP = normalizarTipoMovimiento(pendingQuickMovement.tipo) === 'DS' && pendingQuickMovement.cuotaPropia && !pendingQuickMovement.cubierto;
+    const monto = esDSP ? dividirCuotaPropia(pendingQuickMovement.monto).actual : Number(pendingQuickMovement.monto);
+    const sim = JSON.parse(JSON.stringify(state.semanas));
+    const r = restarGastoDivididoEntreIndices(sim, monto, marcados);
+    r.repartos.forEach(rep => {
+      const el = document.querySelector(`.bloque-parte[data-i="${rep.index}"]`);
+      if (el) el.textContent = `−S/ ${fmt(rep.descuento)}`;
+    });
+    if (nota) {
+      nota.textContent = r.exceso > 0.005
+        ? `Faltan S/ ${fmt(r.exceso)}: los cubre el bloque actual.`
+        : `Partes iguales entre ${marcados.length} bloques. Si uno no alcanza, el faltante pasa al siguiente.`;
+    }
   }
 
   function cancelarSelectorBloqueMovimiento() {
@@ -18715,9 +18814,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       closeModal();
       return;
     }
-    const idx = Number(document.querySelector('input[name="quickMovementBlock"]:checked')?.value);
+    // BUILD327 · uno o varios bloques marcados
+    const marcados = [...document.querySelectorAll('input[name="quickMovementBlock"]:checked')]
+      .map(el => Number(el.value)).filter(Number.isInteger).sort((a, b) => a - b);
+    if (!marcados.length) { toast('Elige al menos un bloque', true); return; }
     const datos = { ...pendingQuickMovement };
-    if (Number.isInteger(idx)) datos.bloqueElegido = idx; // igual al actual se trata como sin elección
+    // Solo el actual = sin elección (lo resuelve bloqueElegidoValido); un bloque = como antes; 2+ = lista.
+    datos.bloqueElegido = marcados.length === 1 ? marcados[0] : marcados;
     delete datos.tarjetaSugerida;
     pendingQuickMovement = null;
     bloqueLongPressTriggered = false;
@@ -18854,11 +18957,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       const currentIdx = calcularSemanaIdxParaFecha(fechaReal);
       // BUILD323 · con bloque elegido, el rollover se evalúa contra ese bloque.
       const bloqueEl = bloqueElegidoValido(bloqueElegido, fechaReal, etiqueta);
-      const idxCheck = bloqueEl !== null ? bloqueEl : currentIdx;
+      const idxCheck = bloqueEl !== null && !Array.isArray(bloqueEl) ? bloqueEl : currentIdx;
       const semActual = idxCheck >= 0 && idxCheck < state.semanas.length
         ? state.semanas[idxCheck]
         : null;
-      if (semActual && impactoActual > (Number(semActual.presupuesto) || 0)) {
+      // BUILD327 · varios bloques: hay rollover solo si, repartido en partes iguales, algo no se cubre.
+      const excede = Array.isArray(bloqueEl)
+        ? excesoBloquesMultiples(impactoActual, bloqueEl, fechaReal) > 0.005
+        : !!(semActual && impactoActual > (Number(semActual.presupuesto) || 0));
+      if (excede) {
         confirmarRollover(monto, tipo, etiqueta, detalle, categoria, tarjetaId, esDSP, monedaOriginal, montoOriginal, tipoCambio, fechaReal, bloqueEl);
         return;
       }
@@ -19014,13 +19121,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (!semActual) { toast('El ciclo ya terminó; inicia uno nuevo', true); return; }
     // BUILD323 · bloque elegido (futuro): el exceso se mide contra ese bloque.
     const bloqueEl = bloqueElegidoValido(bloqueElegido, ahora, etiqueta);
-    const idxObjetivo = bloqueEl !== null ? bloqueEl : semActualIdx;
+    const esMulti = Array.isArray(bloqueEl); // BUILD327 · varios bloques
+    const idxObjetivo = esMulti ? bloqueEl[bloqueEl.length - 1] : (bloqueEl !== null ? bloqueEl : semActualIdx);
     const semObjetivo = state.semanas[idxObjetivo];
     const restanteSemActual = Math.max(0, Number(semObjetivo.presupuesto) || 0);
-    const exceso = Math.max(0, impactoActual - restanteSemActual);
+    let exceso = Math.max(0, impactoActual - restanteSemActual);
     const semanasSimuladas = JSON.parse(JSON.stringify(state.semanas));
     if (bloqueEl !== null) {
-      aplicarGastoEnBloqueElegido(
+      const resSim = aplicarGastoEnBloqueElegido(
         semanasSimuladas,
         impactoActual,
         state.totalDisponible - impactoActual,
@@ -19028,6 +19136,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         bloqueEl,
         ahora
       );
+      if (esMulti) exceso = Math.max(0, Number(resSim?.exceso) || 0);
     } else {
       aplicarGastoEnBloques(
         semanasSimuladas,
@@ -19039,14 +19148,23 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       );
     }
 
-    const desgloseHtml = [`
+    // BUILD327 · varios bloques: una fila por bloque marcado (antes → después).
+    const desgloseHtml = esMulti ? bloqueEl.map(i => {
+      const antes = Math.max(0, Number(state.semanas[i].presupuesto) || 0);
+      const despues = Number(semanasSimuladas[i].presupuesto) || 0;
+      return `
+      <div class="rollover-row">
+        <span class="rollover-week">Bloque ${i + 1} <span class="rollover-tag">${calcularRangoSemanas()[i]?.dias || 7} días</span></span>
+        <span class="rollover-amount">S/ ${fmt(antes)} → S/ ${fmt(despues)}</span>
+      </div>`;
+    }) : [`
       <div class="rollover-row">
         <span class="rollover-week">${bloqueEl !== null ? `Bloque ${bloqueEl + 1}` : 'Bloque actual'}</span>
         <span class="rollover-amount">S/ ${fmt(restanteSemActual)} → S/ 0.00</span>
       </div>
     `];
 
-    for (let i = idxObjetivo + 1; i < state.semanas.length; i++) {
+    for (let i = idxObjetivo + 1; !esMulti && i < state.semanas.length; i++) {
       const anterior = Math.max(0, Number(state.semanas[i].presupuesto) || 0);
       const nuevo = Math.max(0, Number(semanasSimuladas[i].presupuesto) || 0);
       const reduccion = Math.max(0, anterior - nuevo);
@@ -19059,7 +19177,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     }
 
     // BUILD323 · si no quedan bloques después del elegido, la diferencia sale del bloque actual.
-    if (bloqueEl !== null) {
+    if (bloqueEl !== null && !(esMulti && bloqueEl.includes(semActualIdx))) {
       const antesActual = Math.max(0, Number(state.semanas[semActualIdx].presupuesto) || 0);
       const despuesActual = Number(semanasSimuladas[semActualIdx].presupuesto) || 0;
       if (Math.abs(antesActual - despuesActual) > 0.005) {
@@ -19082,9 +19200,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const partes = cuotaPropia ? dividirCuotaPropia(monto) : null;
 
     openModal(`
-      <h2>Excede el <span class="accent">${bloqueEl !== null ? `bloque ${bloqueEl + 1}` : 'bloque actual'}</span></h2>
+      <h2>${esMulti ? 'Exceden los' : 'Excede el'} <span class="accent">${esMulti ? etiquetaBloquesElegidos(bloqueEl).toLowerCase() : (bloqueEl !== null ? `bloque ${bloqueEl + 1}` : 'bloque actual')}</span></h2>
       <p class="modal-sub">
-        ${cuotaPropia
+        ${esMulti
+          ? `${cuotaPropia ? `Tu DS+P de <strong>S/ ${fmt(monto)}</strong> carga <strong>S/ ${fmt(partes.actual)}</strong> a este ciclo y deja <strong>S/ ${fmt(partes.siguiente)}</strong> para el próximo. ` : `Tu gasto de <strong>S/ ${fmt(monto)}</strong> `}se divide en partes iguales entre los bloques elegidos, pero faltan <strong>S/ ${fmt(exceso)}</strong>. Esa diferencia la cubre el bloque actual:`
+          : cuotaPropia
           ? `Tu DS+P de <strong>S/ ${fmt(monto)}</strong> carga <strong>S/ ${fmt(partes.actual)}</strong> a este ciclo y deja <strong>S/ ${fmt(partes.siguiente)}</strong> para el próximo. La parte actual excede este bloque en <strong>S/ ${fmt(exceso)}</strong>.`
           : `Tu gasto de <strong>S/ ${fmt(monto)}</strong> excede este bloque en <strong>S/ ${fmt(exceso)}</strong>. El disponible restante se repartirá proporcionalmente entre los bloques futuros:`}
       </p>
@@ -19102,7 +19222,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button class="btn-primary" onclick='ejecutarConRollover(${monto}, ${JSON.stringify(tipo)}, ${etiqueta ? JSON.stringify(etiqueta) : "null"}, ${JSON.stringify(detalle)}, ${JSON.stringify(categoria)}, ${JSON.stringify(normalizarTarjetaId(tarjetaId))}, ${cuotaPropia ? 'true' : 'false'}, ${JSON.stringify(monedaOriginal || 'PEN')}, ${Number.isFinite(Number(montoOriginal)) ? Number(montoOriginal) : monto}, ${Number.isFinite(Number(tipoCambio)) ? Number(tipoCambio) : 'null'}, ${JSON.stringify(ahora.toISOString())}, ${bloqueEl !== null ? bloqueEl : 'null'})'>Confirmar gasto</button>
+        <button class="btn-primary" onclick='ejecutarConRollover(${monto}, ${JSON.stringify(tipo)}, ${etiqueta ? JSON.stringify(etiqueta) : "null"}, ${JSON.stringify(detalle)}, ${JSON.stringify(categoria)}, ${JSON.stringify(normalizarTarjetaId(tarjetaId))}, ${cuotaPropia ? 'true' : 'false'}, ${JSON.stringify(monedaOriginal || 'PEN')}, ${Number.isFinite(Number(montoOriginal)) ? Number(montoOriginal) : monto}, ${Number.isFinite(Number(tipoCambio)) ? Number(tipoCambio) : 'null'}, ${JSON.stringify(ahora.toISOString())}, ${bloqueEl !== null ? JSON.stringify(bloqueEl) : 'null'})'>Confirmar gasto</button>
       </div>
     `);
   }
@@ -19527,10 +19647,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       }
     } else if (notificar && opciones.soloBloqueActual && resultadoBloques.exceso > 0) {
       toast(`Bloque actual excedido S/ ${fmt(resultadoBloques.exceso)} · futuros sin cambios`, true);
+    } else if (notificar && resultadoBloques.exceso > 0 && Array.isArray(mov.bloqueElegido)) {
+      toast(`Faltaron S/ ${fmt(resultadoBloques.exceso)} · los cubre el bloque actual`, true); // BUILD327
     } else if (notificar && resultadoBloques.exceso > 0) {
       toast(`Excediste S/ ${fmt(resultadoBloques.exceso)} · bloques futuros ajustados`, true);
     } else if (notificar && mov.bloqueElegido !== undefined) {
-      toast(`−S/ ${fmt(impactoPresupuesto)} · Bloque ${mov.bloqueElegido + 1}`);
+      toast(`−S/ ${fmt(impactoPresupuesto)} · ${etiquetaBloquesElegidos(mov.bloqueElegido)}`);
     } else if (notificar && opciones.soloBloqueActual) {
       toast(`−S/ ${fmt(impactoPresupuesto)} · solo bloque actual`);
     } else if (notificar) {

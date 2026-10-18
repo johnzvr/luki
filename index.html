@@ -7696,6 +7696,102 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ledger-arc-ui .app { padding-bottom: calc(212px + env(safe-area-inset-bottom)); }
 .ledger-arc-ui .sync-badge { cursor: pointer; min-height: 30px; }
 </style>
+
+<style id="luki-325-simulador-b">
+/* BUILD325 · Simulador de compra, propuesta B: monto protagonista, veredicto,
+   comparación visual de estrategias y línea de tiempo del estado de cuenta.
+   Solo presentación: no cambia ninguna regla de descuento. */
+#modalContent:has(#simPurchaseAmount) .psb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+#modalContent:has(#simPurchaseAmount) .psb-title { min-width: 0; color: var(--sim-support); font-size: 13px; font-weight: 600; }
+#modalContent:has(#simPurchaseAmount) .psb-title strong { color: var(--ink); font-weight: 750; }
+#modalContent:has(#simPurchaseAmount) .psb-head .purchase-modal-close { width: 44px; height: 44px; flex: 0 0 44px; margin: 0; }
+#modalContent:has(#simPurchaseAmount) .psb-hero { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 6px 0 4px; }
+#modalContent:has(#simPurchaseAmount) .psb-currency { min-width: 68px; height: 44px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--line); color: var(--ink); font-family: var(--font-ui); font-size: 14px; font-weight: 750; cursor: pointer; }
+#modalContent:has(#simPurchaseAmount) .psb-currency::after { content: '⇄'; margin-left: 8px; font-size: 12px; opacity: .5; }
+#modalContent:has(#simPurchaseAmount) .psb-currency.usd { background: rgba(107,142,78,.18); color: var(--gain); }
+#modalContent:has(#simPurchaseAmount) #simPurchaseAmount.psb-amount { width: 100%; box-sizing: border-box; height: auto; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; outline: none; background: transparent; box-shadow: none; color: var(--ink); font-family: var(--font-num); font-size: 56px; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; text-align: center; -moz-appearance: textfield; appearance: textfield; }
+#modalContent:has(#simPurchaseAmount) #simPurchaseAmount.psb-amount::-webkit-inner-spin-button,
+#modalContent:has(#simPurchaseAmount) #simPurchaseAmount.psb-amount::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+#modalContent:has(#simPurchaseAmount) #simPurchaseAmount.psb-amount::placeholder { color: var(--ink-mute); }
+#modalContent:has(#simPurchaseAmount) .psb-terms { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+#modalContent:has(#simPurchaseAmount) .psb-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+#modalContent:has(#simPurchaseAmount) .psb-chip { min-width: 48px; min-height: 44px; padding: 0 14px; border: 1.5px solid var(--line-hi); border-radius: 22px; background: transparent; color: var(--ink); font-family: var(--font-ui); font-size: 13px; font-weight: 700; cursor: pointer; }
+#modalContent:has(#simPurchaseAmount) .psb-chip.wide { min-width: 84px; }
+#modalContent:has(#simPurchaseAmount) .psb-chip.active { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+#modalContent:has(#simPurchaseAmount) .psb-other { display: flex; justify-content: center; width: 100%; }
+#modalContent:has(#simPurchaseAmount) .psb-other[hidden] { display: none; }
+#modalContent:has(#simPurchaseAmount) .psb-other .purchase-installment-select-wrap { width: 190px; }
+#modalContent:has(#simPurchaseAmount) .psb-term-note { color: var(--sim-support); font-size: 12px; text-align: center; }
+#modalContent:has(#simPurchaseAmount) .psb-hint { color: var(--sim-support); font-size: 11px; line-height: 1.4; text-align: center; }
+#modalContent:has(#simPurchaseAmount) .psb-hint:empty { display: none; }
+#modalContent:has(#simPurchaseAmount) #purchaseSimulationResult.psb-stale { opacity: .45; transition: opacity .15s ease; pointer-events: none; }
+#modalContent:has(#simPurchaseAmount) .psb-eyebrow { display: block; color: var(--sim-label); font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+#modalContent:has(#simPurchaseAmount) .psb-verdict { margin-top: 16px; border: 1px solid var(--sim-line); border-radius: 22px; background: var(--sim-soft); }
+#modalContent:has(#simPurchaseAmount) .psb-verdict.good { background: rgba(120,170,90,.16); border-color: rgba(120,170,90,.35); }
+#modalContent:has(#simPurchaseAmount) .psb-verdict.mid { background: rgba(214,160,60,.18); border-color: rgba(214,160,60,.4); }
+#modalContent:has(#simPurchaseAmount) .psb-verdict.bad { background: rgba(196,85,59,.14); border-color: rgba(196,85,59,.38); }
+#modalContent:has(#simPurchaseAmount) .psb-verdict-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
+#modalContent:has(#simPurchaseAmount) .psb-verdict-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+#modalContent:has(#simPurchaseAmount) .psb-verdict-icon { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--sim-label); color: var(--bg); }
+#modalContent:has(#simPurchaseAmount) .psb-verdict.good .psb-verdict-icon { background: var(--gain); }
+#modalContent:has(#simPurchaseAmount) .psb-verdict.mid .psb-verdict-icon { background: #D9A93A; color: #1A1A1A; }
+#modalContent:has(#simPurchaseAmount) .psb-verdict.bad .psb-verdict-icon { background: var(--danger); }
+#modalContent:has(#simPurchaseAmount) .psb-verdict-title { color: var(--ink); font-size: 15px; font-weight: 750; line-height: 1.15; }
+#modalContent:has(#simPurchaseAmount) .psb-verdict-sub { margin-top: 2px; color: var(--sim-support); font-size: 12px; line-height: 1.3; }
+#modalContent:has(#simPurchaseAmount) .psb-verdict-total { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+#modalContent:has(#simPurchaseAmount) .psb-nums { color: var(--ink); font-family: var(--font-num); font-size: 14px; white-space: nowrap; }
+#modalContent:has(#simPurchaseAmount) .psb-nums .psb-dim { color: var(--sim-support); }
+#modalContent:has(#simPurchaseAmount) .psb-section { margin-top: 16px; }
+#modalContent:has(#simPurchaseAmount) .psb-section > .psb-eyebrow { margin: 0 4px 8px; }
+#modalContent:has(#simPurchaseAmount) .psb-strats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+#modalContent:has(#simPurchaseAmount) .psb-strats.one { grid-template-columns: minmax(0, 1fr); }
+#modalContent:has(#simPurchaseAmount) .psb-strat { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 2px solid var(--line-hi); border-radius: 18px; background: transparent; color: var(--ink); font-family: var(--font-ui); text-align: left; cursor: pointer; }
+#modalContent:has(#simPurchaseAmount) .psb-strat.active { background: var(--surface, var(--bg)); border-color: var(--ink); }
+#modalContent:has(#simPurchaseAmount) .psb-strat-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+#modalContent:has(#simPurchaseAmount) .psb-strat-name { font-size: 14px; font-weight: 750; }
+#modalContent:has(#simPurchaseAmount) .psb-radio { flex: none; width: 18px; height: 18px; box-sizing: border-box; border: 2px solid var(--ink-mute); border-radius: 50%; }
+#modalContent:has(#simPurchaseAmount) .psb-strat.active .psb-radio { border-color: var(--ink); background: var(--ink); box-shadow: inset 0 0 0 3px var(--surface, var(--bg)); }
+#modalContent:has(#simPurchaseAmount) .psb-strat-sub { min-height: 30px; color: var(--sim-support); font-size: 11px; line-height: 1.3; }
+#modalContent:has(#simPurchaseAmount) .psb-cols { display: flex; align-items: flex-end; gap: 6px; }
+#modalContent:has(#simPurchaseAmount) .psb-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+#modalContent:has(#simPurchaseAmount) .psb-col-val { font-family: var(--font-num); font-size: 11px; font-weight: 700; }
+#modalContent:has(#simPurchaseAmount) .psb-col-bar { position: relative; width: 100%; height: 76px; }
+#modalContent:has(#simPurchaseAmount) .psb-col-before,
+#modalContent:has(#simPurchaseAmount) .psb-col-after { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 6px; }
+#modalContent:has(#simPurchaseAmount) .psb-col-before { background: var(--line-hi); opacity: .7; }
+#modalContent:has(#simPurchaseAmount) .psb-col-after { background: var(--ink); }
+#modalContent:has(#simPurchaseAmount) .psb-col-lbl { color: var(--sim-support); font-family: var(--font-num); font-size: 9px; white-space: nowrap; }
+#modalContent:has(#simPurchaseAmount) .psb-col-delta { color: var(--sim-support); font-family: var(--font-num); font-size: 11px; }
+#modalContent:has(#simPurchaseAmount) .psb-col-over { color: var(--danger); font-size: 9px; font-weight: 750; }
+#modalContent:has(#simPurchaseAmount) .psb-blockrow { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border: 1px solid var(--sim-line); border-radius: 16px; background: var(--surface, var(--bg)); }
+#modalContent:has(#simPurchaseAmount) .psb-blockrow-name { font-size: 13px; font-weight: 700; min-width: 0; }
+#modalContent:has(#simPurchaseAmount) .psb-blockrow-vals { display: flex; align-items: center; gap: 8px; font-family: var(--font-num); font-size: 13px; white-space: nowrap; flex-shrink: 0; }
+#modalContent:has(#simPurchaseAmount) .psb-blockrow-vals .psb-dim { color: var(--sim-support); }
+#modalContent:has(#simPurchaseAmount) .psb-pill { height: 22px; padding: 0 8px; display: inline-flex; align-items: center; border-radius: 11px; background: var(--sim-good); color: #1A1A1A; font-family: var(--font-ui); font-size: 11px; font-weight: 750; }
+#modalContent:has(#simPurchaseAmount) .psb-pill.mid { background: var(--sim-mid); }
+#modalContent:has(#simPurchaseAmount) .psb-pill.bad { background: var(--sim-bad); }
+#modalContent:has(#simPurchaseAmount) .psb-warn { margin: 8px 4px 0; color: var(--sim-support); font-size: 12px; line-height: 1.4; }
+#modalContent:has(#simPurchaseAmount) .psb-card { margin-top: 16px; padding: 14px; border: 1px solid var(--sim-line); border-radius: 20px; background: var(--surface, var(--bg)); }
+#modalContent:has(#simPurchaseAmount) .psb-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#modalContent:has(#simPurchaseAmount) .psb-link { min-height: 44px; margin: -8px -4px -8px 0; padding: 0 4px; border: 0; background: transparent; color: var(--ink); font-family: var(--font-ui); font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+#modalContent:has(#simPurchaseAmount) .psb-tl { position: relative; height: 50px; margin: 10px 6px 6px; }
+#modalContent:has(#simPurchaseAmount) .psb-tl-line { position: absolute; left: 0; right: 0; top: 5px; height: 2px; background: var(--line-hi); }
+#modalContent:has(#simPurchaseAmount) .psb-tl-seg { position: absolute; left: 0; top: 5px; height: 2px; background: var(--ink); }
+#modalContent:has(#simPurchaseAmount) .psb-dot { position: absolute; top: 0; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--ink); }
+#modalContent:has(#simPurchaseAmount) .psb-dot.sueldo { top: 2px; width: 8px; height: 8px; margin-left: -4px; box-sizing: border-box; border: 2px solid var(--ink-mute); background: var(--surface, var(--bg)); }
+#modalContent:has(#simPurchaseAmount) .psb-dot.pago { background: var(--gain); }
+#modalContent:has(#simPurchaseAmount) .psb-tl-lbl { position: absolute; top: 18px; display: flex; flex-direction: column; align-items: center; gap: 1px; white-space: nowrap; transform: translateX(-50%); }
+#modalContent:has(#simPurchaseAmount) .psb-tl-lbl.start { transform: none; align-items: flex-start; }
+#modalContent:has(#simPurchaseAmount) .psb-tl-lbl.end { transform: none; align-items: flex-end; }
+#modalContent:has(#simPurchaseAmount) .psb-tl-lbl span { color: var(--sim-support); font-size: 10px; }
+#modalContent:has(#simPurchaseAmount) .psb-tl-lbl b { color: var(--ink); font-family: var(--font-num); font-size: 11px; font-weight: 700; }
+#modalContent:has(#simPurchaseAmount) .psb-margin { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+#modalContent:has(#simPurchaseAmount) .psb-note { margin: 8px 0 0; color: var(--sim-support); font-size: 12px; line-height: 1.4; }
+#modalContent:has(#simPurchaseAmount) .psb-note-inline { color: var(--sim-support); font-size: 12px; line-height: 1.3; }
+#modalContent:has(#simPurchaseAmount) .modal-buttons { position: sticky; bottom: 0; z-index: 5; margin: 18px -24px -24px; padding: 12px 24px 24px; background: var(--bg); border-top: 1px solid var(--sim-line); }
+#modalContent:has(#simPurchaseAmount) .purchase-footer-register { flex: 1; min-height: 56px; border-radius: 28px; font-size: 16px; }
+#modalContent:has(#simPurchaseAmount) .purchase-footer-register:disabled { opacity: .35; cursor: default; }
+</style>
 </head>
 <body class="ledger-arc-ui">
 
@@ -8144,7 +8240,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '324';
+  const LEDGER_BUILD = '325';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -20193,6 +20289,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   let purchaseBudgetStrategy = 'redistribute'; // 'redistribute' | 'current'
   let purchaseSimulationCardId = 'interbank';
   let pendingPurchaseSimulation = null;
+  // BUILD325 · chips de cuotas y cálculo en vivo
+  const PURCHASE_QUICK_TERMS = Object.freeze([1, 3, 6, 12]);
+  let purchaseTermsOtherOpen = false;
+  let purchaseSimulationTimer = null;
 
   function setPurchaseBudgetStrategy(strategy) {
     purchaseBudgetStrategy = strategy === 'current' ? 'current' : 'redistribute';
@@ -20222,8 +20322,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function clearPurchaseSimulationResult() {
+    clearTimeout(purchaseSimulationTimer);
     const resultado = document.getElementById('purchaseSimulationResult');
-    if (resultado) resultado.innerHTML = '';
+    if (resultado) { resultado.innerHTML = ''; resultado.classList.remove('psb-stale'); }
     pendingPurchaseSimulation = null;
     updatePurchaseSimulatorFooter(false);
   }
@@ -20233,15 +20334,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const register = document.getElementById('purchaseFooterRegister');
     if (!analyze || !register) return;
 
-    analyze.textContent = 'Analizar';
-    analyze.setAttribute('onclick', 'calculatePurchaseSimulation()');
-    analyze.classList.toggle('btn-secondary', canRegister);
-    analyze.classList.toggle('btn-primary', !canRegister);
-
-    register.hidden = !canRegister;
-    if (canRegister) {
-      register.textContent = purchaseSimulationMode === 'single' ? 'Registrar compra' : 'Registrar en cuotas';
-    }
+    // BUILD325 · el análisis es en vivo: "Analizar" ya no se muestra y "Registrar" queda
+    // siempre visible, deshabilitado hasta que haya un resultado vigente.
+    analyze.hidden = true;
+    register.hidden = false;
+    register.disabled = !canRegister;
+    register.textContent = purchaseSimulationMode === 'single' ? 'Registrar compra' : 'Registrar en cuotas';
   }
 
   function updatePurchaseInstallmentUi() {
@@ -20267,6 +20365,58 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const plus = document.querySelector('[data-installment-step="1"]');
     if (minus) minus.disabled = purchaseSimulationInstallments <= PURCHASE_RESULT_TERMS[0];
     if (plus) plus.disabled = purchaseSimulationInstallments >= PURCHASE_INSTALLMENT_TERMS[PURCHASE_INSTALLMENT_TERMS.length - 1];
+    // BUILD325 · chips rápidos (1, 3, 6, 12) y "Otro" con el selector completo 2–36
+    const esRapido = PURCHASE_QUICK_TERMS.includes(purchaseSimulationInstallments);
+    const otroActivo = !esRapido || purchaseTermsOtherOpen;
+    document.querySelectorAll('.psb-chip[data-term]').forEach(chip => {
+      const term = chip.dataset.term;
+      const activo = term === 'other'
+        ? otroActivo
+        : (!otroActivo && Number(term) === purchaseSimulationInstallments);
+      chip.classList.toggle('active', activo);
+      chip.setAttribute('aria-pressed', activo ? 'true' : 'false');
+    });
+    const otroFila = document.getElementById('purchaseInstallmentOther');
+    if (otroFila) otroFila.hidden = !otroActivo;
+  }
+
+  // BUILD325 · elegir un plazo rápido
+  function pickPurchaseTerm(months) {
+    purchaseTermsOtherOpen = false;
+    setPurchaseSimulationInstallments(months);
+  }
+
+  // BUILD325 · mostrar u ocultar el selector de 2–36 cuotas
+  function togglePurchaseOtherTerms() {
+    const esRapido = PURCHASE_QUICK_TERMS.includes(purchaseSimulationInstallments);
+    if (!esRapido) return; // un plazo fuera de los chips mantiene "Otro" activo
+    purchaseTermsOtherOpen = !purchaseTermsOtherOpen;
+    updatePurchaseInstallmentUi();
+  }
+
+  // BUILD325 · el análisis se calcula solo, poco después de cambiar el monto, la moneda o el plazo
+  function schedulePurchaseSimulation() {
+    clearTimeout(purchaseSimulationTimer);
+    const resultado = document.getElementById('purchaseSimulationResult');
+    if (!resultado) return;
+    const input = document.getElementById('simPurchaseAmount');
+    const monto = input ? parseFloat(String(input.value).replace(',', '.')) : 0;
+    if (!Number.isFinite(monto) || monto <= 0) {
+      clearPurchaseSimulationResult();
+      return;
+    }
+    // Mientras se espera, el resultado anterior queda atenuado y no se puede registrar.
+    pendingPurchaseSimulation = null;
+    updatePurchaseSimulatorFooter(false);
+    resultado.classList.add('psb-stale');
+    purchaseSimulationTimer = setTimeout(() => calculatePurchaseSimulation(true), 280);
+  }
+
+  function fitPurchaseAmountFont() {
+    const input = document.getElementById('simPurchaseAmount');
+    if (!input) return;
+    const largo = String(input.value || '').length;
+    input.style.fontSize = largo <= 5 ? '' : largo <= 7 ? '44px' : '34px';
   }
 
   function setPurchaseSimulationMode(mode) {
@@ -20286,7 +20436,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       : lastPurchaseSimulationInstallments;
     updatePurchaseInstallmentUi();
     if (recalcularEnVivo) calculatePurchaseSimulation();
-    else clearPurchaseSimulationResult();
+    else { clearPurchaseSimulationResult(); schedulePurchaseSimulation(); } // BUILD325
   }
 
   function setPurchaseSimulationInstallments(months) {
@@ -20311,7 +20461,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     }
     updatePurchaseInstallmentUi();
     if (recalcularEnVivo) calculatePurchaseSimulation();
-    else clearPurchaseSimulationResult();
+    else { clearPurchaseSimulationResult(); schedulePurchaseSimulation(); } // BUILD325
   }
 
   function stepPurchaseSimulationInstallments(direction) {
@@ -20339,8 +20489,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     clearPurchaseSimulationResult();
     updatePurchaseSimulationConversion();
     updatePurchaseInstallmentUi();
+    schedulePurchaseSimulation(); // BUILD325
     if (purchaseSimulationCurrency === 'USD') {
-      Promise.resolve(fetchExchangeRate()).finally(updatePurchaseSimulationConversion);
+      Promise.resolve(fetchExchangeRate()).finally(() => {
+        updatePurchaseSimulationConversion();
+        schedulePurchaseSimulation(); // BUILD325
+      });
     }
   }
 
@@ -20349,8 +20503,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function onPurchaseSimulationInput() {
-    clearPurchaseSimulationResult();
     updatePurchaseSimulationConversion();
+    fitPurchaseAmountFont();
+    schedulePurchaseSimulation(); // BUILD325 · análisis en vivo
   }
 
   function updatePurchaseSimulationConversion() {
@@ -20427,41 +20582,42 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     lastPurchaseSimulationInstallments = 12;
     purchaseBudgetStrategy = 'redistribute';
     pendingPurchaseSimulation = null;
+    purchaseTermsOtherOpen = false;
+    clearTimeout(purchaseSimulationTimer);
+    // BUILD325 · propuesta B: monto protagonista, chips de cuotas y análisis en vivo (sin botón Analizar)
     openModal(`
-      <div class="purchase-sim-toolbar">
-        <button type="button" class="purchase-dates-btn purchase-dates-btn-head" onclick="openCCConfig('', '${normalizarTarjetaId(purchaseSimulationCardId)}')">Editar fechas</button>
+      <div class="psb-head">
+        <span class="psb-title">Simular compra · <strong>${escapeHtml(nombreTarjeta(purchaseSimulationCardId))}</strong></span>
         <button type="button" class="purchase-modal-close" onclick="closeModal()" aria-label="Cerrar simulador"><span class="purchase-close-glyph" aria-hidden="true"></span></button>
       </div>
-      <div class="purchase-sim-actions">
-        <div class="modal-field purchase-amount-field">
-          <div class="purchase-amount-wrap">
-            <button type="button" class="purchase-currency-toggle" id="purchaseCurrencyToggle" onclick="togglePurchaseSimulationCurrency()" aria-label="Cambiar moneda del simulador. Actual: soles">S/</button>
-            <input type="number" min="0" step="0.01" inputmode="decimal" id="simPurchaseAmount" placeholder="0.00" oninput="onPurchaseSimulationInput()" onkeydown="if(event.key === 'Enter') calculatePurchaseSimulation()">
+      <div class="psb-hero">
+        <button type="button" class="psb-currency" id="purchaseCurrencyToggle" onclick="togglePurchaseSimulationCurrency()" aria-label="Cambiar moneda del simulador. Actual: soles">S/</button>
+        <input type="number" class="psb-amount" min="0" step="0.01" inputmode="decimal" id="simPurchaseAmount" placeholder="0" aria-label="Monto de la compra" oninput="onPurchaseSimulationInput()" onkeydown="if(event.key === 'Enter') calculatePurchaseSimulation()">
+        <div class="purchase-conversion-preview" id="purchaseConversionPreview"></div>
+        <div class="psb-terms" id="purchaseInstallmentSettings">
+          <div class="psb-chips" role="group" aria-label="Forma de pago">
+            <button type="button" class="psb-chip wide" data-term="1" aria-pressed="true" onclick="pickPurchaseTerm(1)">1 pago</button>
+            <button type="button" class="psb-chip" data-term="3" aria-pressed="false" onclick="pickPurchaseTerm(3)">3</button>
+            <button type="button" class="psb-chip" data-term="6" aria-pressed="false" onclick="pickPurchaseTerm(6)">6</button>
+            <button type="button" class="psb-chip" data-term="12" aria-pressed="false" onclick="pickPurchaseTerm(12)">12</button>
+            <button type="button" class="psb-chip" data-term="other" aria-pressed="false" onclick="togglePurchaseOtherTerms()">Otro</button>
           </div>
-        </div>
-      </div>
-      <div class="purchase-conversion-preview" id="purchaseConversionPreview"></div>
-      <div class="purchase-installment-settings" id="purchaseInstallmentSettings">
-        <div class="purchase-installment-head">
-          <span>Forma de pago</span>
-          <strong id="purchaseInstallmentTea">Sin intereses</strong>
-        </div>
-        <div class="purchase-installment-stepper" role="group" aria-label="Forma de pago">
-          <button class="purchase-installment-step" type="button" data-installment-step="-1" aria-label="Reducir cantidad de pagos" onclick="stepPurchaseSimulationInstallments(-1)">−</button>
-          <div class="purchase-installment-select-wrap">
-            <select class="purchase-installment-select" id="purchaseInstallmentSelect" aria-label="Seleccionar forma de pago" onchange="setPurchaseSimulationInstallments(this.value)">
-              ${PURCHASE_RESULT_TERMS.map(months => `<option value="${months}" ${months === 1 ? 'selected' : ''}>${months === 1 ? '1 pago' : `${months} cuotas`}</option>`).join('')}
-            </select>
-            <span class="purchase-installment-select-arrow" aria-hidden="true"></span>
+          <div class="psb-other" id="purchaseInstallmentOther" hidden>
+            <div class="purchase-installment-select-wrap">
+              <select class="purchase-installment-select" id="purchaseInstallmentSelect" aria-label="Seleccionar cantidad de cuotas" onchange="setPurchaseSimulationInstallments(this.value)">
+                ${PURCHASE_RESULT_TERMS.map(months => `<option value="${months}" ${months === 1 ? 'selected' : ''}>${months === 1 ? '1 pago' : `${months} cuotas`}</option>`).join('')}
+              </select>
+              <span class="purchase-installment-select-arrow" aria-hidden="true"></span>
+            </div>
           </div>
-          <button class="purchase-installment-step" type="button" data-installment-step="1" aria-label="Aumentar cantidad de pagos" onclick="stepPurchaseSimulationInstallments(1)">+</button>
+          <div class="psb-term-note" id="purchaseInstallmentTea">Sin intereses</div>
+          <div class="psb-hint" id="purchaseInstallmentHint"></div>
         </div>
-        <div class="purchase-installment-hint" id="purchaseInstallmentHint"></div>
       </div>
       <div id="purchaseSimulationResult"></div>
       <div class="modal-buttons">
-        <button class="btn-primary purchase-footer-analyze" id="purchaseFooterAnalyze" onclick="calculatePurchaseSimulation()">Analizar</button>
-        <button class="btn-primary purchase-footer-register" id="purchaseFooterRegister" onclick="openInstallmentRegistration()" hidden>Registrar en cuotas</button>
+        <button class="btn-primary purchase-footer-analyze" id="purchaseFooterAnalyze" onclick="calculatePurchaseSimulation()" hidden>Analizar</button>
+        <button class="btn-primary purchase-footer-register" id="purchaseFooterRegister" onclick="openInstallmentRegistration()" disabled>Registrar compra</button>
       </div>
     `);
     requestAnimationFrame(() => {
@@ -20527,6 +20683,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function resumenFinanciamiento(plan, currencyInfo) {
+    if (plan.meses === 1) return ''; // BUILD325 · en 1 pago no se repite lo que ya está escrito arriba
     const cuota = formatInstallmentMoney(plan.cuota, currencyInfo.currency);
     const total = formatInstallmentMoney(plan.total, currencyInfo.currency);
     const intereses = formatInstallmentMoney(plan.intereses, currencyInfo.currency);
@@ -20593,19 +20750,59 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function resumenCiclosBanco(escenario, plan, fechaCompra = new Date()) {
     if (!escenario?.calendario?.pago) return '';
+    // BUILD325 · línea de tiempo del estado de cuenta (reemplaza la lista de ciclos antes del pago)
+    const esCuotas = Number(plan?.meses) > 1;
     const compra = normalizarFechaSimulacion(fechaCompra);
-    const fechas = [compra, ...(Array.isArray(escenario.sueldos) ? escenario.sueldos : [])];
-    const rangos = rangosCiclosSimulador(fechas, escenario.calendario.pago);
-    const lista = rangos.map(item => item.texto).join(' · ');
-    const pagoLabel = Number(plan?.meses) > 1 ? 'Primera cuota' : 'Pago';
-    const ayuda = `Compra ${formatFecha(compra).replace(/\.$/, '')} · Cierre ${formatFecha(escenario.calendario.cierre).replace(/\.$/, '')} · ${pagoLabel} ${formatFechaCompleta(escenario.calendario.pago)}`;
+    const cierre = normalizarFechaSimulacion(escenario.calendario.cierre);
+    const pago = normalizarFechaSimulacion(escenario.calendario.pago);
+    const sueldos = (Array.isArray(escenario.sueldos) ? escenario.sueldos : []).map(fecha => normalizarFechaSimulacion(fecha));
+    const tramo = Math.max(1, pago - compra);
+    const pct = fecha => Math.max(0, Math.min(100, ((fecha - compra) / tramo) * 100));
+    const corta = fecha => formatFecha(fecha).replace(/\.$/, '');
+    const hitos = [
+      { tipo: 'pago', rotulo: esCuotas ? '1ª cuota' : 'Pago', fecha: pago },
+      { tipo: 'hoy', rotulo: 'Hoy', fecha: compra },
+      { tipo: 'cierre', rotulo: 'Cierre', fecha: cierre },
+      ...sueldos.map(fecha => ({ tipo: 'sueldo', rotulo: 'Sueldo', fecha }))
+    ].map(hito => ({ ...hito, pct: pct(hito.fecha) }));
+    // Las etiquetas se asignan por prioridad y no se muestran si pisarían a otra.
+    const conEtiqueta = [];
+    hitos.forEach(hito => {
+      if (conEtiqueta.every(otro => Math.abs(otro.pct - hito.pct) >= 16)) {
+        hito.etiqueta = true;
+        conEtiqueta.push(hito);
+      }
+    });
+    const puntos = hitos.map(hito => `<span class="psb-dot${hito.tipo === 'sueldo' ? ' sueldo' : hito.tipo === 'pago' ? ' pago' : ''}" style="left:${hito.pct.toFixed(1)}%"></span>`).join('');
+    const etiquetas = hitos.filter(hito => hito.etiqueta).map(hito => {
+      const lado = hito.pct <= 12 ? 'start' : hito.pct >= 88 ? 'end' : '';
+      const posicion = lado === 'start' ? 'left:0' : lado === 'end' ? 'right:0' : `left:${hito.pct.toFixed(1)}%`;
+      return `<span class="psb-tl-lbl${lado ? ' ' + lado : ''}" style="${posicion}"><span>${hito.rotulo}</span><b>${corta(hito.fecha)}</b></span>`;
+    }).join('');
+    const nivel = ['good', 'mid', 'bad'].includes(escenario.nivel) ? escenario.nivel : 'neutral';
+    const abonos = sueldos.length === 0
+      ? 'Sin abonos de sueldo antes del pago'
+      : `${sueldos.length} abono${sueldos.length === 1 ? '' : 's'} de sueldo antes del pago`;
+    const nota = esCuotas
+      ? `Esta compra entra al estado que cierra el ${corta(cierre)}. La primera cuota se paga el ${corta(pago)}.`
+      : `Esta compra entra al estado que cierra el ${corta(cierre)} y se paga el ${corta(pago)}.`;
+    const estimado = escenario.calendario.estimado ? ' Fechas estimadas con tu último patrón.' : '';
     return `
-      <div class="purchase-cycle-window-card">
-        <div class="purchase-card-head-inline">
-          <span class="purchase-impact-eyebrow">Ciclos antes del ${Number(plan?.meses) > 1 ? 'primer pago' : 'pago'}</span>
+      <div class="psb-card">
+        <div class="psb-card-head">
+          <span class="psb-eyebrow">Estado de cuenta</span>
+          <button type="button" class="psb-link" onclick="openCCConfig('', '${normalizarTarjetaId(purchaseSimulationCardId)}')">Editar fechas</button>
         </div>
-        <div class="purchase-cycle-window-list">${lista || 'Sin otro ciclo antes del pago'}</div>
-        ${purchaseHelpIcon(ayuda)}
+        <div class="psb-tl" role="img" aria-label="${escapeHtml(`${nota} ${abonos}.`)}">
+          <span class="psb-tl-line"></span>
+          <span class="psb-tl-seg" style="width:${pct(cierre).toFixed(1)}%"></span>
+          ${puntos}${etiquetas}
+        </div>
+        <div class="psb-margin">
+          <span class="purchase-sim-badge ${nivel}">${escenario.margen}</span>
+          <span class="psb-note-inline">${abonos}</span>
+        </div>
+        <p class="psb-note">${nota}${estimado}</p>
       </div>
     `;
   }
@@ -20635,65 +20832,119 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     `;
   }
 
-  function resumenImpactoCuota(capacidad) {
+  function resumenImpactoCuota(capacidad, alterna = null) {
+    // BUILD325 · propuesta B: veredicto + comparación visual de estrategias + bloque actual.
+    // Solo presenta los resultados de analizarCapacidadCompra; no calcula ni descuenta nada.
     const totalAntes = Math.max(0, Number(capacidad.disponibleAntes) || 0);
     const totalDespuesReal = Number(capacidad.disponibleDespues) || 0;
     const totalDespues = Math.max(0, totalDespuesReal);
     const totalFaltante = Math.max(0, -totalDespuesReal);
-    const porcentajeTotal = totalAntes > 0
-      ? Math.max(0, Math.min(100, (totalDespues / totalAntes) * 100))
-      : (totalDespues > 0 ? 100 : 0);
-    const tituloTotal = totalFaltante > 0
-      ? `Faltan S/ ${fmtSim(totalFaltante)}`
-      : `Quedan S/ ${fmtSim(totalDespues)}`;
-    const estadoTotal = totalFaltante > 0 ? 'No alcanza' : 'Sí alcanza';
-    const periodosPlan = Array.isArray(capacidad.presupuestosDespues)
-      ? capacidad.presupuestosDespues
-      : [];
-    const estrategiaActual = capacidad.estrategia === 'current';
-    const resumenPlan = periodosPlan.length ? `
-      <div class="purchase-plan-overview">
-        <span class="purchase-impact-eyebrow">Cómo aplicar el gasto</span>
-        ${purchaseBudgetStrategyControl()}
-        <span class="purchase-impact-eyebrow">${estrategiaActual ? 'Solo bloque actual · futuros sin cambios' : 'Nueva distribución hasta el cierre'}</span>
-        <div class="purchase-plan-grid">
-          ${periodosPlan.map(periodo => `
-            <div class="purchase-plan-period${periodo.esActual ? ' is-current' : ''}">
-              <div class="purchase-plan-header">
-                <span class="purchase-plan-date">${periodo.rango ? formatRangoCorto(periodo.rango) : `Periodo ${periodo.index + 1}`}</span>
-                ${periodo.esActual ? '<span class="purchase-plan-current">Actual</span>' : ''}
-              </div>
-              <strong class="purchase-plan-amount">S/ ${fmtSim(periodo.presupuesto)}</strong>
-              <span class="purchase-plan-days">${periodo.dias} día${periodo.dias === 1 ? '' : 's'}</span>
-              ${periodo.exceso > 0 ? `<span class="purchase-plan-overrun">Exceso S/ ${fmtSim(periodo.exceso)}</span>` : ''}
+    const nivel = ['good', 'mid', 'bad'].includes(capacidad.nivel) ? capacidad.nivel : 'neutral';
+    const iconos = {
+      good: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+      mid: '<path d="M12 7v6M12 17h.01"/>',
+      bad: '<path d="M12 7v6M12 17h.01"/>',
+      neutral: '<path d="M7 12h10"/>'
+    };
+    const sub = nivel === 'neutral'
+      ? ''
+      : `${capacidad.esCuota ? 'La primera cuota usa' : 'Esta compra usa'} ${capacidad.reduccionPct}% de tu disponible`;
+    const derecha = balanceHidden ? '' : `
+      <div class="psb-verdict-total">
+        <span class="psb-eyebrow">${totalFaltante > 0 ? 'No alcanza' : 'Total restante'}</span>
+        <span class="psb-nums">${totalFaltante > 0
+          ? `Faltan S/ ${fmtSim(totalFaltante)}`
+          : `<span class="psb-dim">${fmtSim(totalAntes)} →</span> <strong>S/ ${fmtSim(totalDespues)}</strong>`}</span>
+      </div>
+    `;
+
+    const periodos = Array.isArray(capacidad.presupuestosDespues) ? capacidad.presupuestosDespues : [];
+    let estrategias = '';
+    if (periodos.length && alterna && Array.isArray(alterna.presupuestosDespues) && alterna.presupuestosDespues.length) {
+      const esRedistribuir = capacidad.estrategia !== 'current';
+      const capRedistribuir = esRedistribuir ? capacidad : alterna;
+      const capActual = esRedistribuir ? alterna : capacidad;
+      const antesDe = periodo => Math.max(0, Number(state.semanas?.[periodo.index]?.presupuesto) || 0);
+      const maximo = Math.max(1, ...[capRedistribuir, capActual].flatMap(cap =>
+        cap.presupuestosDespues.flatMap(periodo => [antesDe(periodo), periodo.presupuesto])
+      ));
+      const alto = valor => valor <= 0 ? 0 : Math.max(3, Math.round((valor / maximo) * 76));
+      const diasDe = periodo => {
+        const rango = periodo.rango;
+        if (!rango?.inicio || !rango?.fin) return '';
+        const desde = rango.inicio.getDate();
+        const hasta = rango.fin.getDate();
+        return desde === hasta ? `${desde}` : `${desde}–${hasta}`;
+      };
+      const columnas = cap => cap.presupuestosDespues.map(periodo => {
+        const antes = antesDe(periodo);
+        const delta = redondearDinero(periodo.presupuesto - antes);
+        const textoDelta = Math.abs(delta) < 0.5 ? '—' : `${delta < 0 ? '−' : '+'}${fmtSim(Math.abs(delta))}`;
+        return `
+          <span class="psb-col">
+            <span class="psb-col-val">${fmtSim(periodo.presupuesto)}</span>
+            <span class="psb-col-bar"><span class="psb-col-before" style="height:${alto(antes)}px"></span><span class="psb-col-after" style="height:${alto(periodo.presupuesto)}px"></span></span>
+            <span class="psb-col-lbl">${diasDe(periodo)}</span>
+            <span class="psb-col-delta">${textoDelta}</span>
+            ${periodo.exceso > 0 ? '<span class="psb-col-over">Exceso</span>' : ''}
+          </span>
+        `;
+      }).join('');
+      const tarjeta = (clave, nombre, descripcion, cap) => {
+        const activa = clave === 'current' ? capacidad.estrategia === 'current' : capacidad.estrategia !== 'current';
+        return `
+          <button type="button" class="psb-strat${activa ? ' active' : ''}" aria-pressed="${activa ? 'true' : 'false'}" onclick="setPurchaseBudgetStrategy('${clave}')">
+            <span class="psb-strat-top"><span class="psb-strat-name">${nombre}</span><span class="psb-radio" aria-hidden="true"></span></span>
+            <span class="psb-strat-sub">${descripcion}</span>
+            <span class="psb-cols">${columnas(cap)}</span>
+          </button>
+        `;
+      };
+      const muchos = Math.max(capRedistribuir.presupuestosDespues.length, capActual.presupuestosDespues.length) > 3;
+      estrategias = `
+        <div class="psb-section">
+          <span class="psb-eyebrow">¿De qué bloques sale?</span>
+          <div class="psb-strats${muchos ? ' one' : ''}">
+            ${tarjeta('redistribute', 'Redistribuir', 'Reparte según los días de cada bloque', capRedistribuir)}
+            ${tarjeta('current', 'Solo actual', 'Todo sale del bloque en curso', capActual)}
+          </div>
+        </div>
+      `;
+    }
+
+    let bloqueActual = '';
+    if (periodos.length) {
+      const antes = Math.max(0, Number(capacidad.margenAntes) || 0);
+      const despues = Math.max(0, Number(capacidad.margenDespues) || 0);
+      const baja = antes > 0 ? Math.round(((antes - despues) / antes) * 100) : 0;
+      const nivelBaja = baja <= 15 ? 'good' : baja <= 30 ? 'mid' : 'bad';
+      bloqueActual = `
+        <div class="psb-blockrow">
+          <span class="psb-blockrow-name">Bloque actual${capacidad.rangoBloqueActual ? ` · ${capacidad.rangoBloqueActual}` : ''}</span>
+          <span class="psb-blockrow-vals">
+            <span><span class="psb-dim">${fmtSim(antes)} →</span> <strong>S/ ${fmtSim(despues)}</strong></span>
+            ${baja > 0 ? `<span class="psb-pill ${nivelBaja}">−${baja}%</span>` : ''}
+          </span>
+        </div>
+        ${capacidad.nuevoExceso > 0 ? `<div class="psb-warn">${capacidad.titulo} ${capacidad.detalle}</div>` : ''}
+      `;
+    }
+
+    return `
+      <div class="psb-verdict ${nivel}">
+        <div class="psb-verdict-main">
+          <div class="psb-verdict-left">
+            <span class="psb-verdict-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${iconos[nivel]}</svg></span>
+            <div>
+              <div class="psb-verdict-title">${capacidad.capacidad}</div>
+              ${sub ? `<div class="psb-verdict-sub">${sub}</div>` : ''}
             </div>
-          `).join('')}
+          </div>
+          ${derecha}
         </div>
       </div>
-    ` : '';
-    return `
-      <div class="purchase-budget-card">
-        <section class="purchase-impact-section total">
-          <div class="purchase-impact-label-row">
-            <span class="purchase-impact-eyebrow">Total restante</span>
-            <span class="purchase-sim-badge ${capacidad.nivel}">${capacidad.capacidad}</span>
-          </div>
-          <div class="purchase-impact-heading-row">
-            <div class="purchase-impact-heading">${tituloTotal}</div>
-          </div>
-          ${balanceHidden ? '' : `
-            <div class="purchase-budget-track" aria-label="Disponible total después de ${capacidad.esCuota ? 'la primera cuota' : 'la compra'}">
-              <div class="purchase-budget-fill" style="width:${porcentajeTotal.toFixed(1)}%"></div>
-            </div>
-            <div class="purchase-budget-waterfall" aria-label="Resumen del impacto en tu disponible">
-              <span class="purchase-budget-waterfall-start"><small>Antes</small><strong>S/ ${fmtSim(totalAntes)}</strong></span>
-              <span class="purchase-budget-waterfall-delta"><small>${capacidad.esCuota ? '1ª cuota' : 'Compra'}</small><strong>− S/ ${fmtSim(Math.max(0, Number(capacidad.montoImpacto) || 0))}</strong></span>
-              <span class="purchase-budget-waterfall-end"><small>Restante</small><strong>S/ ${fmtSim(totalDespues)}</strong></span>
-            </div>
-          `}
-        </section>
-        ${resumenPlan}
-      </div>
+      ${estrategias}
+      ${bloqueActual}
     `;
   }
 
@@ -20949,12 +21200,16 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     `;
   }
 
-  function calculatePurchaseSimulation() {
+  // BUILD325 · silent=true cuando el análisis se dispara solo (sin avisos ni foco)
+  function calculatePurchaseSimulation(silent = false) {
+    silent = silent === true;
+    clearTimeout(purchaseSimulationTimer);
     const input = document.getElementById('simPurchaseAmount');
     const resultado = document.getElementById('purchaseSimulationResult');
     if (!input || !resultado) return;
     const montoIngresado = parseFloat(String(input.value).replace(',', '.'));
     if (!Number.isFinite(montoIngresado) || montoIngresado <= 0) {
+      if (silent) { clearPurchaseSimulationResult(); return; }
       toast('Escribe un monto mayor a cero', true);
       input.focus();
       return;
@@ -20965,7 +21220,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (purchaseSimulationCurrency === 'USD') {
       rate = getExchangeRate();
       if (!rate) {
-        toast('Necesitas un tipo de cambio para simular en dólares', true);
+        if (silent) clearPurchaseSimulationResult();
+        else toast('Necesitas un tipo de cambio para simular en dólares', true);
         updatePurchaseSimulationConversion();
         return;
       }
@@ -20987,23 +21243,25 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const hoy = new Date();
     hoy.setHours(12, 0, 0, 0);
     const compraHoy = escenarioCompra(hoy, montoImpacto, hoy, currencyInfo, purchaseSimulationCardId);
+    resultado.classList.remove('psb-stale'); // BUILD325
     if (!compraHoy) {
       resultado.innerHTML = `
         <div class="purchase-impact warning">
           <span class="purchase-impact-label">${escapeHtml(nombreTarjeta(purchaseSimulationCardId))}</span>
           <strong>Faltan fechas de facturación.</strong>
           <span class="purchase-impact-weekly">Ingresa el cierre y pago exactos de esta tarjeta para poder simularla.</span>
+          <button type="button" class="psb-link" onclick="openCCConfig('', '${normalizarTarjetaId(purchaseSimulationCardId)}')">Editar fechas</button>
         </div>
       `;
       updatePurchaseSimulatorFooter(false);
-      toast(`Configura las fechas de ${nombreTarjeta(purchaseSimulationCardId)}`, true);
+      if (!silent) toast(`Configura las fechas de ${nombreTarjeta(purchaseSimulationCardId)}`, true);
       return;
     }
     const esperarHasta = new Date(compraHoy.calendario.cierre);
     esperarHasta.setDate(esperarHasta.getDate() + 1);
     const compraEsperando = escenarioCompra(esperarHasta, montoImpacto, hoy, currencyInfo, purchaseSimulationCardId);
     if (!compraEsperando) {
-      toast(`Faltan fechas para proyectar ${nombreTarjeta(purchaseSimulationCardId)}`, true);
+      if (!silent) toast(`Faltan fechas para proyectar ${nombreTarjeta(purchaseSimulationCardId)}`, true);
       return;
     }
 
@@ -21016,6 +21274,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const disponibleDespues = disponibleReal - montoImpacto;
     const deudaDespues = state.deudaActual + monto;
     const capacidad = analizarCapacidadCompra(montoImpacto, planCuotas.meses > 1, purchaseBudgetStrategy);
+    // BUILD325 · la otra estrategia, solo para compararla visualmente (no se aplica nada)
+    const capacidadAlterna = analizarCapacidadCompra(montoImpacto, planCuotas.meses > 1, purchaseBudgetStrategy === 'current' ? 'redistribute' : 'current');
     let ritmoSemanalTexto;
     if (disponibleDespues < 0) {
       ritmoSemanalTexto = 'No quedaría disponible para repartir hasta el cierre.';
@@ -21048,7 +21308,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       resultado.innerHTML = `
         ${conversionResumen}
         ${resumenFinanciamiento(planCuotas, currencyInfo)}
-        ${resumenImpactoCuota(capacidad)}
+        ${resumenImpactoCuota(capacidad, capacidadAlterna)}
         ${resumenCiclosBanco(compraHoy, planCuotas, hoy)}
         <button class="purchase-comparison-toggle" type="button" aria-expanded="false" onclick="togglePurchaseComparison(this)">
           <span class="purchase-comparison-label">Ver comparación de fechas</span>

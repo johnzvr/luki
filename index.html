@@ -8240,7 +8240,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '325';
+  const LEDGER_BUILD = '326';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -20308,7 +20308,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <button type="button"
           class="purchase-budget-strategy-btn${redistribuir ? ' active' : ''}"
           aria-pressed="${redistribuir ? 'true' : 'false'}"
-          onclick="setPurchaseBudgetStrategy('redistribute')">Redistribuir</button>
+          onclick="setPurchaseBudgetStrategy('redistribute')">Repartir</button>
         <button type="button"
           class="purchase-budget-strategy-btn${!redistribuir ? ' active' : ''}"
           aria-pressed="${!redistribuir ? 'true' : 'false'}"
@@ -20905,7 +20905,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <div class="psb-section">
           <span class="psb-eyebrow">¿De qué bloques sale?</span>
           <div class="psb-strats${muchos ? ' one' : ''}">
-            ${tarjeta('redistribute', 'Redistribuir', 'Reparte según los días de cada bloque', capRedistribuir)}
+            ${tarjeta('redistribute', 'Repartir', 'Una parte sale de cada bloque', capRedistribuir)}
             ${tarjeta('current', 'Solo actual', 'Todo sale del bloque en curso', capActual)}
           </div>
         </div>
@@ -21055,6 +21055,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
       if (estrategiaNormalizada === 'current') {
         aplicarGastoSoloBloqueActual(simulado.semanas, monto, new Date());
+      } else {
+        // BUILD326 · "Repartir" = lo mismo que "sem": una parte del gasto a cada bloque restante
+        aplicarGastoEnBloques(simulado.semanas, monto, simulado.totalDisponible, simulado.metaResidual, 'sem', new Date());
+      }
+      {
         asignacionesDespues = simulado.semanas.slice(currentIdx).map((sem, offset) => {
           const index = currentIdx + offset;
           const rango = rangos[index] || null;
@@ -21065,12 +21070,6 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
             dias: rango ? Math.max(0, Number(rango.dias) || 0) : 0
           };
         });
-      } else {
-        asignacionesDespues = redistribuirPresupuestoRestante(
-          simulado.semanas,
-          simulado.totalDisponible,
-          simulado.metaResidual
-        );
       }
       semanasDespues = simulado.semanas;
     } catch(e) {}
@@ -21122,7 +21121,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         } else {
           detalle = futuros
             ? `El bloque actual quedaría en cero. Los siguientes se ajustarían a ${futuros}.`
-            : 'El bloque actual quedaría en cero y no hay bloques futuros para redistribuir.';
+            : 'El bloque actual quedaría en cero y no hay bloques futuros para repartir.';
         }
       } else {
         titulo = `El bloque actual quedaría con S/ ${fmtSim(margenDespues)}.`;
@@ -21462,11 +21461,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     const ahora = new Date(sim.fechaCompra || Date.now());
     if (esPagoUnico) {
-      const ok = aplicarMovimiento(cuotaPen, tipo, null, detalle, {
+      // BUILD326 · "Repartir" registra con 'sem' (una parte a cada bloque restante)
+      const ok = aplicarMovimiento(cuotaPen, tipo, (tipo === 'DS' && sim.estrategiaBloques !== 'current') ? 'sem' : null, detalle, {
         fecha: ahora,
         renderizar: false,
         notificar: false,
-        redistribuirRestantes: tipo === 'DS' && sim.estrategiaBloques !== 'current',
         soloBloqueActual: tipo === 'DS' && sim.estrategiaBloques === 'current',
         metadata: { tarjetaId: normalizarTarjetaId(sim.tarjetaId) }
       });
@@ -21505,11 +21504,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     };
     if (!Array.isArray(state.planesCuotas)) state.planesCuotas = [];
     state.planesCuotas.push(plan);
-    const ok = aplicarMovimiento(cuotaPen, tipo, null, detalle, {
+    // BUILD326 · "Repartir" registra con 'sem' (una parte a cada bloque restante)
+      const ok = aplicarMovimiento(cuotaPen, tipo, (tipo === 'DS' && sim.estrategiaBloques !== 'current') ? 'sem' : null, detalle, {
       fecha: ahora,
       renderizar: false,
       notificar: false,
-      redistribuirRestantes: tipo === 'DS' && sim.estrategiaBloques !== 'current',
       soloBloqueActual: tipo === 'DS' && sim.estrategiaBloques === 'current',
       metadata: {
         planCuotasId: plan.id,

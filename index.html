@@ -7764,8 +7764,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 #modalContent:has(#simPurchaseAmount) .psb-col-lbl { color: var(--sim-support); font-family: var(--font-num); font-size: 9px; white-space: nowrap; }
 #modalContent:has(#simPurchaseAmount) .psb-col-delta { color: var(--sim-support); font-family: var(--font-num); font-size: 11px; }
 #modalContent:has(#simPurchaseAmount) .psb-col-over { color: var(--danger); font-size: 9px; font-weight: 750; }
-#modalContent:has(#simPurchaseAmount) .psb-blockrow { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border: 1px solid var(--sim-line); border-radius: 16px; background: var(--surface, var(--bg)); }
+#modalContent:has(#simPurchaseAmount) .psb-blocklist { margin-top: 10px; border: 1px solid var(--sim-line); border-radius: 16px; background: var(--surface, var(--bg)); overflow: hidden; }
+#modalContent:has(#simPurchaseAmount) .psb-blockrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; }
+#modalContent:has(#simPurchaseAmount) .psb-blockrow + .psb-blockrow,
+#modalContent:has(#simPurchaseAmount) .psb-blocklist-more .psb-blockrow,
+#modalContent:has(#simPurchaseAmount) .psb-blocklist-toggle { border-top: 1px solid var(--sim-line); }
 #modalContent:has(#simPurchaseAmount) .psb-blockrow-name { font-size: 13px; font-weight: 700; min-width: 0; }
+#modalContent:has(#simPurchaseAmount) .psb-blockrow-range { display: block; margin-top: 2px; font-size: 12px; font-weight: 500; color: var(--sim-support); white-space: nowrap; }
+#modalContent:has(#simPurchaseAmount) .psb-blocklist-toggle { width: 100%; min-height: 44px; border-left: 0; border-right: 0; border-bottom: 0; background: transparent; color: var(--ink); font-family: var(--font-ui); font-size: 12px; font-weight: 700; cursor: pointer; }
 #modalContent:has(#simPurchaseAmount) .psb-blockrow-vals { display: flex; align-items: center; gap: 8px; font-family: var(--font-num); font-size: 13px; white-space: nowrap; flex-shrink: 0; }
 #modalContent:has(#simPurchaseAmount) .psb-blockrow-vals .psb-dim { color: var(--sim-support); }
 #modalContent:has(#simPurchaseAmount) .psb-pill { height: 22px; padding: 0 8px; display: inline-flex; align-items: center; border-radius: 11px; background: var(--sim-good); color: #1A1A1A; font-family: var(--font-ui); font-size: 11px; font-weight: 750; }
@@ -8243,7 +8249,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '328';
+  const LEDGER_BUILD = '329';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -21063,7 +21069,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     };
     const sub = nivel === 'neutral'
       ? ''
-      : `${capacidad.esCuota ? 'La primera cuota usa' : 'Esta compra usa'} ${capacidad.reduccionPct}% de tu disponible`;
+      : `${capacidad.esCuota ? 'La primera cuota usa' : 'Esta compra usa'} ${capacidad.reduccionPct}% de tu disponible total`;
     const derecha = balanceHidden ? '' : `
       <div class="psb-verdict-total">
         <span class="psb-eyebrow">${totalFaltante > 0 ? 'No alcanza' : 'Total restante'}</span>
@@ -21127,19 +21133,44 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       `;
     }
 
+    // BUILD329 · Una fila por cada bloque que la compra toca (Repartir → varios; Solo actual → uno)
     let bloqueActual = '';
     if (periodos.length) {
-      const antes = Math.max(0, Number(capacidad.margenAntes) || 0);
-      const despues = Math.max(0, Number(capacidad.margenDespues) || 0);
-      const baja = antes > 0 ? Math.round(((antes - despues) / antes) * 100) : 0;
-      const nivelBaja = baja <= 15 ? 'good' : baja <= 30 ? 'mid' : 'bad';
+      const antesDeBloque = periodo => periodo.esActual
+        ? Math.max(0, Number(capacidad.margenAntes) || 0)
+        : Math.max(0, Number(state.semanas?.[periodo.index]?.presupuesto) || 0);
+      const afectados = periodos.filter(periodo => {
+        if (periodo.esActual) return true;
+        return Math.abs(periodo.presupuesto - antesDeBloque(periodo)) >= 0.5 || periodo.exceso > 0;
+      });
+      const fila = periodo => {
+        const antes = antesDeBloque(periodo);
+        const despues = periodo.esActual
+          ? Math.max(0, Number(capacidad.margenDespues) || 0)
+          : Math.max(0, Number(periodo.presupuesto) || 0);
+        const baja = antes > 0 ? Math.round(((antes - despues) / antes) * 100) : 0;
+        const nivelBaja = baja <= 15 ? 'good' : baja <= 30 ? 'mid' : 'bad';
+        const rango = periodo.rango ? formatRangoCorto(periodo.rango) : '';
+        const nombre = periodo.esActual ? 'Bloque actual' : `Bloque ${periodo.index + 1}`;
+        return `
+          <div class="psb-blockrow">
+            <span class="psb-blockrow-name">${nombre}${rango ? `<span class="psb-blockrow-range">${rango}</span>` : ''}</span>
+            <span class="psb-blockrow-vals">
+              <span><span class="psb-dim">${fmtSim(antes)} →</span> <strong>S/ ${fmtSim(despues)}</strong></span>
+              ${baja > 0 ? `<span class="psb-pill ${nivelBaja}">−${baja}%</span>` : ''}
+            </span>
+          </div>
+        `;
+      };
+      const visibles = afectados.length > 3 ? afectados.slice(0, 3) : afectados;
+      const ocultos = afectados.length > 3 ? afectados.slice(3) : [];
       bloqueActual = `
-        <div class="psb-blockrow">
-          <span class="psb-blockrow-name">Bloque actual${capacidad.rangoBloqueActual ? ` · ${capacidad.rangoBloqueActual}` : ''}</span>
-          <span class="psb-blockrow-vals">
-            <span><span class="psb-dim">${fmtSim(antes)} →</span> <strong>S/ ${fmtSim(despues)}</strong></span>
-            ${baja > 0 ? `<span class="psb-pill ${nivelBaja}">−${baja}%</span>` : ''}
-          </span>
+        <div class="psb-blocklist">
+          ${visibles.map(fila).join('')}
+          ${ocultos.length ? `
+            <div class="psb-blocklist-more" hidden>${ocultos.map(fila).join('')}</div>
+            <button type="button" class="psb-blocklist-toggle" onclick="const m=this.previousElementSibling;m.hidden=!m.hidden;this.textContent=m.hidden?'+${ocultos.length} bloque${ocultos.length === 1 ? '' : 's'}':'Ver menos'">+${ocultos.length} bloque${ocultos.length === 1 ? '' : 's'}</button>
+          ` : ''}
         </div>
         ${capacidad.nuevoExceso > 0 ? `<div class="psb-warn">${capacidad.titulo} ${capacidad.detalle}</div>` : ''}
       `;

@@ -8215,7 +8215,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>
       </div>
       <div class="chip type-F" data-type="F" onclick="setType('F')" aria-label="Fondo; combínalo con DS para pagar con tarjeta">F</div>
-      <div class="chip mod" data-mod="sem" onclick="setMod('sem')">sem</div>
+      <div class="chip mod" id="semChip" data-mod="sem" onclick="setMod('sem')"
+        onpointerdown="startSemLongPress(event)" onpointerup="cancelSemLongPress()" onpointercancel="cancelSemLongPress()" onpointerleave="cancelSemLongPress()"
+        oncontextmenu="return false" title="Mantén presionado para elegir los bloques">sem</div>
       <div class="redistrib-control" id="redistribControl">
         <div
           class="chip mod"
@@ -8240,7 +8242,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '327';
+  const LEDGER_BUILD = '328';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -17755,6 +17757,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   
   let selectedType = null;
   let selectedMod = null;
+  let selectedBloquesSem = null; // BUILD328 · bloques elegidos manteniendo presionado "sem" (null = ninguno)
   let selectedDSCovered = false;
   let selectedDSOwn = false;
   let selectedDSProjected = false;
@@ -17901,7 +17904,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       else if (selectedType === 'FDS') selectedType = 'DS';
       else selectedType = selectedType === 'F' ? null : 'F';
     }
-    if (selectedType === 'F' || selectedType === 'FDS') selectedMod = null;
+    if (selectedType === 'F' || selectedType === 'FDS') { selectedMod = null; selectedBloquesSem = null; }
     closeDSVariantMenu();
     updateChipsUI();
   }
@@ -17952,6 +17955,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     selectedDSOwn = variant === 'own';
     selectedDSProjected = variant === 'projected';
     selectedMod = null;
+    selectedBloquesSem = null;
     closeDSVariantMenu();
     updateChipsUI();
   }
@@ -18119,8 +18123,55 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       toast('El fondo no usa reparto por bloques', true);
       return;
     }
+    if (semLongPressTriggered) { semLongPressTriggered = false; return; } // el click tras soltar el long press
+    // BUILD328 · con bloques elegidos, tocar "sem" quita la selección
+    if (mod === 'sem' && selectedBloquesSem) { selectedBloquesSem = null; selectedMod = null; updateChipsUI(); return; }
     selectedMod = (selectedMod === mod) ? null : mod;
     updateChipsUI();
+  }
+
+  // BUILD328 · mantener presionado "sem" abre el selector de bloques (todos marcados = "sem"; menos = selección).
+  let semLongPressTimer = null;
+  let semLongPressTriggered = false;
+
+  function startSemLongPress(event) {
+    if (event?.pointerType === 'mouse' && event.button !== 0) return;
+    clearTimeout(semLongPressTimer);
+    semLongPressTriggered = false;
+    try { event?.currentTarget?.setPointerCapture?.(event.pointerId); } catch (e) {}
+    semLongPressTimer = setTimeout(() => {
+      semLongPressTimer = null;
+      abrirSelectorBloquesSem();
+    }, 520);
+  }
+
+  function cancelSemLongPress() {
+    clearTimeout(semLongPressTimer);
+    semLongPressTimer = null;
+  }
+
+  // Datos de lo que se está escribiendo (aún sin enviar), para mostrar el reparto en vivo.
+  function datosPreviosSem() {
+    let monto = parseFloat(document.getElementById('inputAmount')?.value);
+    if (currentCurrency === 'USD') { const r = getExchangeRate(); monto = r ? monto * r : NaN; }
+    return {
+      monto: Number.isFinite(monto) && monto > 0 ? monto : 0,
+      tipo: selectedType || 'S',
+      detalle: (document.getElementById('inputDetalle')?.value || '').trim(),
+      cuotaPropia: selectedType === 'DS' && selectedDSOwn,
+      cubierto: false,
+      fechaMovimiento: null
+    };
+  }
+
+  function abrirSelectorBloquesSem() {
+    semLongPressTriggered = true; // el click que sigue al soltar no debe alternar "sem"
+    if (selectedType === 'DS' && selectedDSCovered) { toast('DS+C no usa bloques: el monto ya está cubierto', true); return; }
+    if (selectedType === 'DS' && selectedDSProjected) { toast('Proyectado ya reserva el monto entre los bloques restantes', true); return; }
+    if (selectedType === 'F' || selectedType === 'FDS') { toast('El fondo no usa reparto por bloques', true); return; }
+    if (!puedeElegirBloqueMovimiento(datosPreviosSem())) { toast('No quedan bloques futuros para elegir', true); return; }
+    selectorBloqueModo = 'sem';
+    mostrarSelectorBloqueMovimiento();
   }
   
   function updateChipsUI() {
@@ -18141,8 +18192,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     });
     document.querySelectorAll('.chip[data-mod]').forEach(el => {
       if (el.dataset.mod === 'recalcula') el.classList.remove('active');
-      else el.classList.toggle('active', el.dataset.mod === selectedMod);
+      else el.classList.toggle('active', el.dataset.mod === selectedMod || (el.dataset.mod === 'sem' && !!selectedBloquesSem));
     });
+    const semChip = document.getElementById('semChip');
+    if (semChip) semChip.textContent = selectedBloquesSem ? 'sem ' + selectedBloquesSem.map(i => i + 1).join('·') : 'sem'; // BUILD328
   }
   
   function ejecutarRecalculo() {
@@ -18559,6 +18612,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       pendingQuickMovement = datosRegistro;
       bandejaRegistroEnCurso = { id: item.id, monto, desde: Date.now() };
       bloqueSelectorAbiertoEn = Date.now();
+      selectorBloqueModo = 'registro'; // BUILD328
       mostrarSelectorBloqueMovimiento();
       return true;
     }
@@ -18742,30 +18796,42 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         document.getElementById('quickRegisterMovementCategory')?.value
       );
     }
+    selectorBloqueModo = 'registro'; // BUILD328
     mostrarSelectorBloqueMovimiento();
   }
 
   // BUILD324 · vista del selector (la usan el registro manual y "Por confirmar").
+  // BUILD328 · el selector sirve a dos orígenes: el registro (modo 'registro') y mantener presionado "sem" (modo 'sem').
+  let selectorBloqueModo = 'registro';
+  function datosSelectorBloque() {
+    return selectorBloqueModo === 'sem' ? datosPreviosSem() : pendingQuickMovement;
+  }
+
   function mostrarSelectorBloqueMovimiento() {
-    if (!pendingQuickMovement) return;
-    const fecha = pendingQuickMovement.fechaMovimiento ? new Date(pendingQuickMovement.fechaMovimiento) : new Date();
+    const datosSel = datosSelectorBloque();
+    if (!datosSel) return;
+    const esSem = selectorBloqueModo === 'sem';
+    const fecha = datosSel.fechaMovimiento ? new Date(datosSel.fechaMovimiento) : new Date();
     const cur = calcularSemanaIdxParaFecha(fecha);
     const rangos = calcularRangoSemanas();
+    // Marcados al abrir: en "sem" todos los restantes (o la selección previa); en el registro, la selección traída o el actual.
+    const previos = esSem ? selectedBloquesSem : (Array.isArray(datosSel.bloqueElegido) ? datosSel.bloqueElegido : (Number.isInteger(datosSel.bloqueElegido) ? [datosSel.bloqueElegido] : null));
     const opciones = [];
     for (let i = cur; i < state.semanas.length; i++) {
       const disp = Math.max(0, Number(state.semanas[i]?.presupuesto) || 0);
+      const marcado = esSem ? (previos ? previos.includes(i) : true) : (previos ? previos.includes(i) : i === cur);
       // BUILD327 · casillas: se pueden marcar varios bloques (partes iguales entre los marcados).
       opciones.push(`
         <label class="edit-type-option">
-          <input type="checkbox" name="quickMovementBlock" value="${i}" ${i === cur ? 'checked' : ''} onchange="actualizarReparticionBloques()">
+          <input type="checkbox" name="quickMovementBlock" value="${i}" ${marcado ? 'checked' : ''} onchange="actualizarReparticionBloques()">
           <span>Bloque ${i + 1}${i === cur ? ' · actual' : ''} · ${rangos[i]?.dias || 7} días · S/ ${fmt(disp)}<b class="bloque-parte" data-i="${i}" style="margin-left:auto;padding-left:10px;font-weight:760;"></b></span>
         </label>`);
     }
     bloqueSelectorAbiertoEn = Date.now();
     try { navigator.vibrate?.(12); } catch (e) {}
     openModal(`
-      <h2>¿De qué <span class="accent">bloque</span> sale?</h2>
-      <p class="modal-sub">${escapeHtml(pendingQuickMovement.detalle || 'Sin detalle')} · <strong>S/ ${fmt(pendingQuickMovement.monto)}</strong></p>
+      <h2>¿De qué <span class="accent">${esSem ? 'bloques' : 'bloque'}</span> sale?</h2>
+      <p class="modal-sub">${escapeHtml(datosSel.detalle || 'Sin detalle')}${datosSel.monto > 0 ? ` · <strong>S/ ${fmt(datosSel.monto)}</strong>` : ''}</p>
       <div class="modal-field">
         <div class="edit-type-grid" style="grid-template-columns:1fr;">${opciones.join('')}</div>
       </div>
@@ -18775,6 +18841,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <button class="btn-primary" onclick="confirmarBloqueMovimiento()">Guardar</button>
       </div>
     `);
+    if (esSem) actualizarReparticionBloques();
   }
 
   // BUILD327 · con 2+ bloques marcados, muestra cuánto resta de cada uno (partes iguales, el faltante pasa al siguiente marcado).
@@ -18784,12 +18851,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const nota = document.getElementById('bloqueRepartoNota');
     const marcados = [...document.querySelectorAll('input[name="quickMovementBlock"]:checked')]
       .map(el => Number(el.value)).filter(Number.isInteger).sort((a, b) => a - b);
-    if (!pendingQuickMovement || marcados.length < 2) {
+    const datosSel = datosSelectorBloque();
+    if (!datosSel || marcados.length < 2 || !(Number(datosSel.monto) > 0)) {
       if (nota) nota.textContent = TEXTO_BASE_SELECTOR_BLOQUE;
       return;
     }
-    const esDSP = normalizarTipoMovimiento(pendingQuickMovement.tipo) === 'DS' && pendingQuickMovement.cuotaPropia && !pendingQuickMovement.cubierto;
-    const monto = esDSP ? dividirCuotaPropia(pendingQuickMovement.monto).actual : Number(pendingQuickMovement.monto);
+    const esDSP = normalizarTipoMovimiento(datosSel.tipo) === 'DS' && datosSel.cuotaPropia && !datosSel.cubierto;
+    const monto = esDSP ? dividirCuotaPropia(datosSel.monto).actual : Number(datosSel.monto);
     const sim = JSON.parse(JSON.stringify(state.semanas));
     const r = restarGastoDivididoEntreIndices(sim, monto, marcados);
     r.repartos.forEach(rep => {
@@ -18805,11 +18873,28 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function cancelarSelectorBloqueMovimiento() {
     if (Date.now() - bloqueSelectorAbiertoEn < 500) return; // ignora el soltado del long press
+    if (selectorBloqueModo === 'sem') { selectorBloqueModo = 'registro'; closeModal(); return; } // BUILD328 · no hay registro en curso
     cancelQuickMovementCategory();
+  }
+
+  // BUILD328 · confirmar desde "sem" mantenido: todos marcados = "sem" normal; menos = selección guardada en el chip.
+  function confirmarBloquesSem() {
+    const cur = calcularSemanaIdxParaFecha(new Date());
+    const marcados = [...document.querySelectorAll('input[name="quickMovementBlock"]:checked')]
+      .map(el => Number(el.value)).filter(Number.isInteger).sort((a, b) => a - b);
+    if (!marcados.length) { toast('Elige al menos un bloque', true); return; }
+    const restantes = state.semanas.length - cur;
+    selectorBloqueModo = 'registro';
+    closeModal();
+    if (marcados.length === restantes) { selectedBloquesSem = null; selectedMod = 'sem'; }
+    else if (marcados.length === 1 && marcados[0] === cur) { selectedBloquesSem = null; selectedMod = null; } // solo el actual = registro normal
+    else { selectedBloquesSem = marcados; selectedMod = null; }
+    updateChipsUI();
   }
 
   function confirmarBloqueMovimiento() {
     if (Date.now() - bloqueSelectorAbiertoEn < 500) return; // ignora el soltado del long press
+    if (selectorBloqueModo === 'sem') { confirmarBloquesSem(); return; } // BUILD328
     if (!pendingQuickMovement) {
       closeModal();
       return;
@@ -19078,7 +19163,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     // La operación financiera ocurre recién después de elegir la categoría.
     const fechaMovimiento = fechaMovimientoForzada ? new Date(fechaMovimientoForzada) : null;
-    openQuickMovementCategory({
+    const datosEnvio = {
       monto,
       tipo: selectedType,
       etiqueta: selectedType === 'DS' && selectedDSCovered ? null : selectedMod,
@@ -19089,7 +19174,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       montoOriginal,
       tipoCambio: tipoCambioOriginal,
       fechaMovimiento: fechaMovimiento && !Number.isNaN(fechaMovimiento.getTime()) ? fechaMovimiento.toISOString() : null
-    });
+    };
+    // BUILD328 · bloques elegidos con "sem" mantenido: solo S/DS de hoy (el retroactivo cae en el bloque de su fecha).
+    if (selectedBloquesSem && puedeElegirBloqueMovimiento(datosEnvio)) {
+      datosEnvio.bloqueElegido = selectedBloquesSem.length === 1 ? selectedBloquesSem[0] : selectedBloquesSem.slice();
+    }
+    openQuickMovementCategory(datosEnvio);
   }
   
   function resetInputs() {
@@ -19097,6 +19187,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     document.getElementById('inputDetalle').value = '';
     selectedType = null;
     selectedMod = null;
+    selectedBloquesSem = null;
+    cancelSemLongPress();
     selectedDSCovered = false;
     selectedDSOwn = false;
     selectedDSProjected = false;

@@ -6752,6 +6752,16 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 .ledger-arc-ui .log-dot.DS { white-space: nowrap; }
 </style>
 
+<style id="luki-333-bandeja-parecido">
+/* BUILD333 · sugerencia de vínculo en Confirmar consumo */
+.bandeja-parecido { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin: 0 0 14px; display: grid; gap: 8px; }
+.bandeja-parecido-title { font-size: 12px; font-weight: 700; color: var(--ink); }
+.bandeja-parecido-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--ink-dim); }
+.bandeja-parecido-row b { color: var(--ink); font-weight: 600; }
+.bandeja-parecido-row .btn-secondary { flex: none; padding: 8px 12px; min-height: 0; font-size: 12px; }
+.bandeja-parecido-note { font-size: 11px; color: var(--ink-mute); line-height: 1.4; }
+</style>
+
 <style id="luki-330-advance">
 /* BUILD330/331 · A = adelanto del próximo sueldo. Fila del bento y badge neutro, como el resto. */
 .ledger-arc-ui .bento-card.advance-row {
@@ -8271,7 +8281,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '332';
+  const LEDGER_BUILD = '333';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -18324,7 +18334,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   // tuyo) nunca se ofrece otra vez. Cada movimiento cubre como máximo un correo.
   var BANDEJA_CACHE_STORAGE = 'luki-bandeja-cache';
   var BANDEJA_INICIO_DEFECTO = '2026-10-15T20:35:00-05:00'; // opción A: solo consumos desde la activación
-  var BANDEJA_MIN_MS_ENTRE_CARGAS = 60000;
+  var BANDEJA_MIN_MS_ENTRE_CARGAS = 25000; // BUILD333 · antes 60 s
+  var BANDEJA_INTERVALO_MS = 30000; // BUILD333 · con la app abierta, revisa Gmail cada 30 s
+  // BUILD333 · desde aquí, un correo solo deja de estar "Por confirmar" si TÚ lo registras o lo vinculas.
+  // Antes de esta fecha se mantiene el emparejado automático, para no llenar la bandeja de lo ya registrado.
+  var BANDEJA_VINCULO_EXPLICITO_DESDE = '2026-10-29T08:30:00-05:00';
   var bandejaDatos = (() => {
     try { return JSON.parse(localStorage.getItem(BANDEJA_CACHE_STORAGE) || 'null') || { items: [] }; }
     catch (e) { return { items: [] }; }
@@ -18439,8 +18453,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       if (mov) { usados.add(mov); registrado.set(it.id, mov); }
     });
     // 2) Movimientos que registraste a mano: misma tarjeta/tipo, monto y fecha cercana (uno a uno).
+    // BUILD333 · solo para correos anteriores al corte; los nuevos siempre llegan y tú decides.
+    const corteExplicito = new Date(BANDEJA_VINCULO_EXPLICITO_DESDE).getTime();
     items.forEach(it => {
       if (registrado.has(it.id)) return;
+      if (new Date(it.fechaISO).getTime() >= corteExplicito) return;
       let mejor = null, mejorDiff = Infinity;
       movs.forEach(m => {
         if (usados.has(m) || m.origenCorreo || !coincideMovimientoBandeja(it, m)) return;
@@ -18451,8 +18468,32 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     });
     return {
       pendientes: items.filter(it => !registrado.has(it.id)).reverse(),
-      registrados: items.filter(it => registrado.has(it.id)).reverse()
+      registrados: items.filter(it => registrado.has(it.id)).reverse(),
+      usados
     };
+  }
+
+  // BUILD333 · movimientos que se parecen al correo (misma tarjeta/tipo, monto, ±3 días) y que no
+  // están vinculados a otro correo. Solo se sugieren: el usuario decide si es el mismo.
+  function movimientosParecidosBandeja(item) {
+    const desdeMs = new Date(state.bandejaDesde || BANDEJA_INICIO_DEFECTO).getTime();
+    const { usados } = estadoBandeja();
+    const f = new Date(item.fechaISO).getTime();
+    return movimientosParaConciliarBandeja(desdeMs)
+      .filter(m => !m.origenCorreo && !usados.has(m) && coincideMovimientoBandeja(item, m))
+      .sort((a, b) => Math.abs(fechaRegistroMovimiento(a).getTime() - f) - Math.abs(fechaRegistroMovimiento(b).getTime() - f))
+      .slice(0, 3);
+  }
+
+  function vincularBandejaItem(id, movId) {
+    const item = bandejaItemPorId(id);
+    if (!item) { closeModal(); return; }
+    const mov = movimientosParecidosBandeja(item).find(m => String(m.id ?? m.timestamp) === String(movId));
+    if (!mov) { toast('Ese movimiento ya no está disponible', true); return; }
+    mov.origenCorreo = item.id; // solo vincula: no registra nada ni cambia montos
+    closeModal();
+    toast('Vinculado · no se registró otra vez');
+    render();
   }
 
   function bandejaItemPorId(id) {
@@ -18544,6 +18585,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const detalle = detalleBandeja(item);
     let sugerencia = { categoria: '' };
     try { sugerencia = sugerenciaMovimiento(detalle); } catch (e) {}
+    let parecidos = [];
+    try { parecidos = movimientosParecidosBandeja(item); } catch (e) {} // BUILD333
     const rate = getExchangeRate();
     const conversion = item.moneda === 'USD'
       ? (rate ? ` ≈ S/ ${fmt(Number(item.monto) * rate)} @ ${rate.toFixed(3)}` : ' · sin tipo de cambio')
@@ -18560,6 +18603,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <label>Monto</label>
         <div style="font-size:22px;font-weight:750;font-variant-numeric:tabular-nums;">${montoBandejaTexto(item)}<span style="font-size:12px;font-weight:600;color:var(--ink-mute);">${conversion}</span></div>
       </div>
+      ${parecidos.length ? `<div class="bandeja-parecido">
+        <div class="bandeja-parecido-title">¿Ya lo registraste?</div>
+        ${parecidos.map(m => `<div class="bandeja-parecido-row">
+          <span><b>${escapeHtml(m.detalle || 'Movimiento')}</b><br>${escapeHtml(etiquetaTipoMovimiento(m))} · ${escapeHtml(formatFecha(fechaRegistroMovimiento(m)))} · S/ ${fmt(Number(m.monto) || 0)}</span>
+          <button type="button" class="btn-secondary" data-id="${escapeHtml(item.id)}" data-mov="${escapeHtml(String(m.id ?? m.timestamp))}" onclick="vincularBandejaItem(this.dataset.id, this.dataset.mov)">Es este</button>
+        </div>`).join('')}
+        <div class="bandeja-parecido-note">"Es este" lo vincula sin registrarlo otra vez. Si es otra compra, usa Registrar.</div>
+      </div>` : ''}
       <div class="modal-field">
         <label>Tipo</label>
         <div class="edit-type-grid">
@@ -23058,6 +23109,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   });
   window.addEventListener('focus', () => { requestDriveFreshnessCheck({ notify: true }); actualizarBandeja(); });
   setTimeout(() => actualizarBandeja({ force: true }), 1500); // BUILD311
+  // BUILD333 · con la app abierta y visible, revisa la bandeja (y Gmail) cada 30 s.
+  setInterval(() => {
+    if (document.visibilityState === 'visible') actualizarBandeja();
+  }, BANDEJA_INTERVALO_MS);
   // BUILD292 · al recuperar señal, subir lo pendiente o volver a comparar.
   window.addEventListener('online', () => {
     if (uploadIsPending()) runAutoUpload();

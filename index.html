@@ -6752,6 +6752,23 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 .ledger-arc-ui .log-dot.DS { white-space: nowrap; }
 </style>
 
+<style id="luki-330-advance">
+/* BUILD330 · A = adelanto del próximo sueldo */
+.log-meta .installment-badge.advance-badge { border: 1px dashed #B08A1E; background: #FBF3DC; color: #7A5C0E; }
+body.dark .log-meta .installment-badge.advance-badge { border-color: #C9A646; background: #2A220E; color: #E9C46A; }
+.advance-summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 10px; padding: 14px 16px; border-radius: 18px;
+  border: 1.5px dashed #B08A1E; background: #FBF3DC; color: #7A5C0E;
+}
+.advance-summary[hidden] { display: none !important; }
+.advance-summary-label { font-size: 13px; font-weight: 700; }
+.advance-summary-sub { font-size: 11px; margin-top: 2px; opacity: .85; }
+.advance-summary-value { font-family: var(--font-num); font-size: 18px; font-weight: 700; white-space: nowrap; }
+.advance-summary-value .cur { font-size: 11px; margin-right: 2px; font-weight: 400; }
+body.dark .advance-summary { background: #2A220E; border-color: #C9A646; color: #E9C46A; }
+</style>
+
 <style id="luki-202-dsp">
 /* BUILD202 · DS+P es una variante de DS: la deuda/gasto real se registra completo,
    pero el presupuesto salarial se divide 50/50 entre este ciclo y el siguiente. */
@@ -7963,6 +7980,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </div>
     </div>
   </div>
+  <!-- BUILD330 · adelantos del próximo sueldo -->
+  <div class="advance-summary" id="advanceSummary" hidden>
+    <div>
+      <div class="advance-summary-label">Adelantado del próximo sueldo</div>
+      <div class="advance-summary-sub" id="advanceSummarySub"></div>
+    </div>
+    <div class="advance-summary-value"><span class="cur">S/</span><span id="advanceSummaryValue">0</span></div>
+  </div>
 
   <!-- Tarjetas -->
   <div class="arc-section-heading">Tus tarjetas</div>
@@ -8211,6 +8236,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
             DS+C
             <small>Deuda cubierta · no consume tu presupuesto</small>
           </button>
+          <button class="ds-variant-menu-btn" type="button" role="menuitem" onclick="selectDSVariant(event, 'advance')">
+            A · Adelanto
+            <small>Lo pagas con el próximo sueldo · suma deuda, no toca este ciclo</small>
+          </button>
           <button class="ds-variant-menu-btn" type="button" role="menuitem" onclick="selectDSVariant(event, 'own')">
             DS+P
             <small>2 cuotas propias · 50% este ciclo + 50% próximo</small>
@@ -8249,7 +8278,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '329';
+  const LEDGER_BUILD = '330';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -10238,6 +10267,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     }
     
     document.getElementById('deudaActual').textContent = fmtInt(Math.max(0, Number(state.deudaActual) || 0));
+    renderAdvanceSummary(); // BUILD330
     document.getElementById('montoIntocable').textContent = fmtInt(state.montoIntocable);
     document.getElementById('gastoNoAdeudado').textContent = fmtInt(state.gastoNoAdeudado);
     document.getElementById('gastoTotal').textContent = fmtInt(state.gastoTotal);
@@ -10481,6 +10511,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return normalizarTipoMovimiento(movOTipo?.tipo) === 'DS' && !!movOTipo?.cubierto;
   }
 
+  // BUILD330 · A = adelanto: misma lógica que DS+C (suma deuda, no toca Disponible ni bloques).
+  // Al abrir el siguiente ciclo, la deuda jalada ya lo incluye y se descuenta una sola vez.
+  function esMovimientoAdelanto(movOTipo) {
+    if (typeof movOTipo === 'string') return movOTipo === 'A';
+    return esMovimientoDSCubierto(movOTipo) && !!movOTipo?.adelanto;
+  }
+
   function esMovimientoDSPropio(movOTipo) {
     if (typeof movOTipo === 'string') return movOTipo === 'DS+P';
     return normalizarTipoMovimiento(movOTipo?.tipo) === 'DS'
@@ -10636,6 +10673,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function etiquetaTipoMovimiento(movOTipo) {
     if (esMovimientoProyectado(movOTipo)) return 'PROY';
+    if (esMovimientoAdelanto(movOTipo)) return 'A'; // BUILD330
     if (esMovimientoDSCubierto(movOTipo)) return 'DS+C';
     if (esMovimientoDSPropio(movOTipo)) return 'DS+P';
     const tipo = normalizarTipoMovimiento(typeof movOTipo === 'string' ? movOTipo : movOTipo?.tipo);
@@ -11510,7 +11548,22 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       : `<span class="payment-badge">Paga ${etiquetaPagoCorta(grupo.pago)}</span>`;
   }
 
+  // BUILD330 · tarjeta en Inicio: cuánto del próximo sueldo ya está comprometido con A.
+  function renderAdvanceSummary() {
+    const box = document.getElementById('advanceSummary');
+    if (!box) return;
+    const adelantos = (Array.isArray(state.log) ? state.log : []).filter(mov => esMovimientoAdelanto(mov));
+    const total = redondearDinero(adelantos.reduce((sum, mov) => sum + (Number(mov.monto) || 0), 0));
+    box.hidden = !(total > 0.005);
+    if (box.hidden) return;
+    document.getElementById('advanceSummaryValue').textContent = fmt(total);
+    const n = adelantos.length;
+    document.getElementById('advanceSummarySub').textContent =
+      `${n} ${n === 1 ? 'movimiento' : 'movimientos'} · ya está en tu deuda, no en este ciclo`;
+  }
+
   function badgeCuotaMovimiento(mov) {
+    if (esMovimientoAdelanto(mov)) return '<span class="installment-badge advance-badge">Adelanto</span>'; // BUILD330
     const numero = Number(mov?.cuotaNumero);
     const total = Number(mov?.cuotasTotal);
     if (!mov?.planCuotasId || !Number.isFinite(numero) || !Number.isFinite(total)) return '';
@@ -13163,7 +13216,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <label>Tipo</label>
         <div class="edit-type-grid">
           ${opcion('S', 'S · Contado')}
-          ${opcion('DS', esMovimientoDSCubierto(mov) ? 'DS+C · Tarjeta cubierta' : (esMovimientoDSPropio(mov) ? 'DS+P · 2 cuotas propias' : 'DS · Tarjeta'))}
+          ${opcion('DS', esMovimientoAdelanto(mov) ? 'A · Adelanto' : esMovimientoDSCubierto(mov) ? 'DS+C · Tarjeta cubierta' : (esMovimientoDSPropio(mov) ? 'DS+P · 2 cuotas propias' : 'DS · Tarjeta'))}
           ${opcion('F', 'F · Fondo')}
           ${opcion('FDS', 'F+DS · Fondo/tarjeta', ' fds')}
         </div>
@@ -13240,7 +13293,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const tipoNuevo = ['S', 'DS', 'F', 'FDS'].includes(tipoElegido) ? tipoElegido : normalizarTipoMovimiento(mov.tipo);
     if (tipoNuevo !== normalizarTipoMovimiento(mov.tipo)) {
       mov.tipo = tipoNuevo;
-      if (tipoNuevo !== 'DS') { delete mov.cubierto; mov.cuotaPropia = false; }
+      if (tipoNuevo !== 'DS') { delete mov.cubierto; delete mov.adelanto; mov.cuotaPropia = false; }
     }
     if (tipoNuevo === 'DS' || tipoNuevo === 'FDS') {
       mov.tarjetaId = normalizarTarjetaId(document.getElementById('editArchivedCardBank')?.value || mov.exTarjetaId || tarjetaIdMovimiento(mov) || 'interbank');
@@ -13594,7 +13647,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           </label>
           <label class="edit-type-option">
             <input type="radio" name="editMovementType" value="DS" ${mov.tipo === 'DS' ? 'checked' : ''}>
-            <span>${esMovimientoDSCubierto(mov) ? 'DS+C · Tarjeta cubierta' : (esMovimientoDSPropio(mov) ? 'DS+P · 2 cuotas propias' : 'DS · Tarjeta')}</span>
+            <span>${esMovimientoAdelanto(mov) ? 'A · Adelanto' : esMovimientoDSCubierto(mov) ? 'DS+C · Tarjeta cubierta' : (esMovimientoDSPropio(mov) ? 'DS+P · 2 cuotas propias' : 'DS · Tarjeta')}</span>
           </label>
           <label class="edit-type-option">
             <input type="radio" name="editMovementType" value="F" ${mov.tipo === 'F' ? 'checked' : ''} ${esCuotaPropia ? 'disabled' : ''}>
@@ -13625,6 +13678,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <span>Repartir entre los bloques restantes</span>
         <input type="checkbox" id="editMovementSem" ${mov.etiqueta === 'sem' ? 'checked' : ''} ${esMovimientoDSCubierto(mov) ? 'disabled' : ''}>
       </label>
+      ${esMovimientoDSCubierto(mov) ? `<label class="edit-sem-row" id="editMovementAdvanceRow">
+        <span>A · Lo pago con el próximo sueldo</span>
+        <input type="checkbox" id="editMovementAdvance" ${esMovimientoAdelanto(mov) ? 'checked' : ''}>
+      </label>` : ''}
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
         <button class="btn-primary" onclick="saveMovementEdit(${idx})">Guardar cambios</button>
@@ -13764,6 +13821,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ? normalizarTarjetaId(document.getElementById('editMovementCard')?.value)
       : '';
     const editCubierto = tipo === 'DS' && esMovimientoDSCubierto(state.log[idx]);
+    const editAdelanto = editCubierto && !!document.getElementById('editMovementAdvance')?.checked; // BUILD330
     const etiqueta = !editCubierto && afectaPresupuestoSalarial(tipo) && document.getElementById('editMovementSem')?.checked ? 'sem' : null;
     if (!Number.isFinite(monto) || monto <= 0 || !['S', 'DS', 'F', 'FDS'].includes(tipo)) {
       toast('Revisa el monto y el tipo', true);
@@ -13789,6 +13847,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       else delete currentMov.categoria;
       if (esMovimientoTarjeta(tipo)) currentMov.tarjetaId = tarjetaId;
       else delete currentMov.tarjetaId;
+      // BUILD330 · DS+C ↔ A es solo una marca: no cambia ningún cálculo.
+      if (editCubierto && editAdelanto) currentMov.adelanto = true;
+      else delete currentMov.adelanto;
 
       if (currentMov.planCuotasId && Array.isArray(state.planesCuotas)) {
         const plan = state.planesCuotas.find(item => item?.id === currentMov.planCuotasId);
@@ -13847,6 +13908,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       else delete editedMov.tarjetaId;
       if (tipo === 'DS' && esMovimientoDSCubierto(originalMov)) editedMov.cubierto = true;
       else delete editedMov.cubierto;
+      if (editedMov.cubierto && editAdelanto) editedMov.adelanto = true; // BUILD330
+      else delete editedMov.adelanto;
 
       const expectedOriginalAfter = applyMovementToSnapshot(targetBefore, originalMov);
       let rebuiltState = applyMovementToSnapshot(targetBefore, editedMov);
@@ -16074,6 +16137,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       categoria: normalizarCategoriaMovimiento(mov.categoria) || null,
       tarjetaId: esMovimientoTarjeta(mov) ? tarjetaIdMovimiento(mov) : null,
       cubierto: esMovimientoDSCubierto(mov),
+      adelanto: esMovimientoAdelanto(mov), // BUILD330
       fecha: mov.fecha || '',
       fechaISO: mov.fechaISO || null,
       timestamp: Number(mov.timestamp) || null,
@@ -16189,6 +16253,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         categoria: normalizarCategoriaMovimiento(m.categoria) || null,
         tarjetaId: esMovimientoTarjeta(m) ? tarjetaIdMovimiento(m) : null,
         cubierto: esMovimientoDSCubierto(m),
+        adelanto: esMovimientoAdelanto(m), // BUILD330
         fecha: m.fecha || '',
         fechaISO: m.fechaISO || null,
         timestamp: Number(m.timestamp) || null,
@@ -16337,6 +16402,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (esMovimientoCuotasPropias(mov)) return 'DS+P · 50% presupuesto + tarjeta';
     if (tipo === 'S') return 'Disponible';
     if (tipo === 'DS+C') return 'Tarjeta · cubierto';
+    if (tipo === 'A') return 'Tarjeta · adelanto próximo sueldo'; // BUILD330
     if (tipo === 'DS') return 'Disponible + tarjeta';
     if (tipo === 'F') return 'Fondo';
     if (tipo === 'F+DS') return 'Fondo + tarjeta';
@@ -17766,6 +17832,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   let selectedMod = null;
   let selectedBloquesSem = null; // BUILD328 · bloques elegidos manteniendo presionado "sem" (null = ninguno)
   let selectedDSCovered = false;
+  let selectedDSAdvance = false; // BUILD330 · A = DS+C marcado como adelanto del próximo sueldo
   let selectedDSOwn = false;
   let selectedDSProjected = false;
 
@@ -17893,11 +17960,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function setType(tipo) {
     if (tipo === 'S') {
       selectedDSCovered = false;
+      selectedDSAdvance = false;
       selectedDSOwn = false;
       selectedDSProjected = false;
       selectedType = selectedType === 'S' ? null : 'S';
     } else if (tipo === 'DS') {
       selectedDSCovered = false;
+      selectedDSAdvance = false;
       selectedDSOwn = false;
       selectedDSProjected = false;
       if (selectedType === 'F') selectedType = 'FDS';
@@ -17905,6 +17974,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       else selectedType = selectedType === 'DS' ? null : 'DS';
     } else if (tipo === 'F') {
       selectedDSCovered = false;
+      selectedDSAdvance = false;
       selectedDSOwn = false;
       selectedDSProjected = false;
       if (selectedType === 'DS') selectedType = 'FDS';
@@ -17958,7 +18028,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     cancelDSLongPress();
     dsLongPressTriggered = false;
     selectedType = 'DS';
-    selectedDSCovered = variant === 'covered';
+    selectedDSCovered = variant === 'covered' || variant === 'advance';
+    selectedDSAdvance = variant === 'advance'; // BUILD330
     selectedDSOwn = variant === 'own';
     selectedDSProjected = variant === 'projected';
     selectedMod = null;
@@ -17983,6 +18054,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     }
     if (selectedType === 'DS' && (selectedDSCovered || selectedDSOwn || selectedDSProjected)) {
       selectedDSCovered = false;
+      selectedDSAdvance = false;
       selectedDSOwn = false;
       selectedDSProjected = false;
       updateChipsUI();
@@ -18119,7 +18191,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function setMod(mod) {
     if (mod === 'recalcula') { ejecutarRecalculo(); return; }
     if (selectedType === 'DS' && selectedDSCovered) {
-      toast('DS+C no usa bloques: el monto ya está cubierto', true);
+      toast(selectedDSAdvance ? 'A no usa bloques: se paga con el próximo sueldo' : 'DS+C no usa bloques: el monto ya está cubierto', true);
       return;
     }
     if (selectedType === 'DS' && selectedDSProjected) {
@@ -18173,7 +18245,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function abrirSelectorBloquesSem() {
     semLongPressTriggered = true; // el click que sigue al soltar no debe alternar "sem"
-    if (selectedType === 'DS' && selectedDSCovered) { toast('DS+C no usa bloques: el monto ya está cubierto', true); return; }
+    if (selectedType === 'DS' && selectedDSCovered) { toast(selectedDSAdvance ? 'A no usa bloques: se paga con el próximo sueldo' : 'DS+C no usa bloques: el monto ya está cubierto', true); return; }
     if (selectedType === 'DS' && selectedDSProjected) { toast('Proyectado ya reserva el monto entre los bloques restantes', true); return; }
     if (selectedType === 'F' || selectedType === 'FDS') { toast('El fondo no usa reparto por bloques', true); return; }
     if (!puedeElegirBloqueMovimiento(datosPreviosSem())) { toast('No quedan bloques futuros para elegir', true); return; }
@@ -18185,9 +18257,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const dsChip = document.getElementById('dsChip');
     if (dsChip) {
       const cubiertoActivo = selectedType === 'DS' && selectedDSCovered;
+      const adelantoActivo = cubiertoActivo && selectedDSAdvance; // BUILD330
       const propioActivo = selectedType === 'DS' && selectedDSOwn;
       const proyectadoActivo = selectedType === 'DS' && selectedDSProjected;
-      dsChip.textContent = cubiertoActivo ? 'DS+C' : (propioActivo ? 'DS+P' : (proyectadoActivo ? 'PROY.' : 'DS'));
+      dsChip.textContent = adelantoActivo ? 'A' : cubiertoActivo ? 'DS+C' : (propioActivo ? 'DS+P' : (proyectadoActivo ? 'PROY.' : 'DS'));
       dsChip.classList.toggle('covered', cubiertoActivo);
       dsChip.classList.toggle('own', propioActivo);
       dsChip.classList.toggle('projected', proyectadoActivo);
@@ -19026,6 +19099,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       categoria,
       tarjetaId,
       cubierto = false,
+      adelanto = false, // BUILD330
       cuotaPropia = false,
       monedaOriginal = 'PEN',
       montoOriginal = monto,
@@ -19107,6 +19181,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       metadata: {
         categoria,
         ...(tipo === 'DS' && cubierto ? { cubierto: true } : {}),
+        ...(tipo === 'DS' && cubierto && adelanto ? { adelanto: true } : {}), // BUILD330
         ...(esMovimientoTarjeta(tipo) ? {
           tarjetaId: normalizarTarjetaId(tarjetaId),
           monedaOriginal,
@@ -19176,6 +19251,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       etiqueta: selectedType === 'DS' && selectedDSCovered ? null : selectedMod,
       detalle,
       cubierto: selectedType === 'DS' && selectedDSCovered,
+      adelanto: selectedType === 'DS' && selectedDSCovered && selectedDSAdvance, // BUILD330
       cuotaPropia: selectedType === 'DS' && selectedDSOwn,
       monedaOriginal,
       montoOriginal,
@@ -19197,6 +19273,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     selectedBloquesSem = null;
     cancelSemLongPress();
     selectedDSCovered = false;
+    selectedDSAdvance = false;
     selectedDSOwn = false;
     selectedDSProjected = false;
     sendLongPressTriggered = false;
@@ -19487,6 +19564,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ...(Number.isFinite(Number(metadata.montoOriginal)) ? { montoOriginal: redondearDinero(Number(metadata.montoOriginal)) } : {}),
       ...(Number.isFinite(Number(metadata.tipoCambio)) && Number(metadata.tipoCambio) > 0 ? { tipoCambio: Number(metadata.tipoCambio) } : {}),
       ...(tipo === 'DS' && metadata.cubierto ? { cubierto: true } : {}),
+      ...(tipo === 'DS' && metadata.cubierto && metadata.adelanto ? { adelanto: true } : {}), // BUILD330
       ...(metadata.cuotaPropia ? { cuotaPropia: true } : {}),
       ...(Math.abs(impactoPresupuesto - monto) > 0.0001 ? { impactoPresupuesto } : {}),
       ...(opciones.redistribuirRestantes ? { redistribucionSimulador: true } : {}),
@@ -19636,6 +19714,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ...(Number.isFinite(Number(metadata.montoOriginal)) ? { montoOriginal: redondearDinero(Number(metadata.montoOriginal)) } : {}),
       ...(Number.isFinite(Number(metadata.tipoCambio)) && Number(metadata.tipoCambio) > 0 ? { tipoCambio: Number(metadata.tipoCambio) } : {}),
       ...(tipo === 'DS' && metadata.cubierto ? { cubierto: true } : {}),
+      ...(tipo === 'DS' && metadata.cubierto && metadata.adelanto ? { adelanto: true } : {}), // BUILD330
       ...(metadata.cuotaPropia ? { cuotaPropia: true } : {}),
       ...(Math.abs(impactoPresupuesto - monto) > 0.0001 ? { impactoPresupuesto } : {}),
       ...(opciones.redistribuirRestantes ? { redistribucionSimulador: true } : {}),
@@ -19694,7 +19773,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (tipo === 'DS' && mov.cubierto) {
       state.deudaActual += monto;
       state.log.push(mov);
-      if (notificar) toast(`DS+C · S/ ${fmt(monto)} ya cubiertos`);
+      if (notificar) toast(mov.adelanto ? `A · S/ ${fmt(monto)} para el próximo sueldo · Disponible sin cambio` : `DS+C · S/ ${fmt(monto)} ya cubiertos`); // BUILD330
       if (renderizar) render();
       return true;
     }

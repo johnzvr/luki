@@ -6753,20 +6753,17 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 </style>
 
 <style id="luki-330-advance">
-/* BUILD330 · A = adelanto del próximo sueldo */
-.log-meta .installment-badge.advance-badge { border: 1px dashed #B08A1E; background: #FBF3DC; color: #7A5C0E; }
-body.dark .log-meta .installment-badge.advance-badge { border-color: #C9A646; background: #2A220E; color: #E9C46A; }
-.advance-summary {
+/* BUILD330/331 · A = adelanto del próximo sueldo. Fila del bento y badge neutro, como el resto. */
+.ledger-arc-ui .bento-card.advance-row {
+  grid-column: 1 / -1;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin-top: 10px; padding: 14px 16px; border-radius: 18px;
-  border: 1.5px dashed #B08A1E; background: #FBF3DC; color: #7A5C0E;
+  padding-left: 0; padding-right: 0;
+  border-top: 1px solid var(--line);
 }
-.advance-summary[hidden] { display: none !important; }
-.advance-summary-label { font-size: 13px; font-weight: 700; }
-.advance-summary-sub { font-size: 11px; margin-top: 2px; opacity: .85; }
-.advance-summary-value { font-family: var(--font-num); font-size: 18px; font-weight: 700; white-space: nowrap; }
-.advance-summary-value .cur { font-size: 11px; margin-right: 2px; font-weight: 400; }
-body.dark .advance-summary { background: #2A220E; border-color: #C9A646; color: #E9C46A; }
+.ledger-arc-ui .bento-card.advance-row[hidden] { display: none !important; }
+.ledger-arc-ui .advance-row-text { min-width: 0; display: grid; gap: 4px; }
+.ledger-arc-ui .advance-row-sub { font-size: 12px; color: var(--ink-mute); line-height: 1.35; }
+.ledger-arc-ui .bento-card.advance-row .bento-value { font-size: clamp(20px,5vw,24px); white-space: nowrap; }
 </style>
 
 <style id="luki-202-dsp">
@@ -7979,14 +7976,18 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <div class="bento-value"><span class="cur">S/</span><span id="gastoTotal">0</span></div>
       </div>
     </div>
-  </div>
-  <!-- BUILD330 · adelantos del próximo sueldo -->
-  <div class="advance-summary" id="advanceSummary" hidden>
-    <div>
-      <div class="advance-summary-label">Adelantado del próximo sueldo</div>
-      <div class="advance-summary-sub" id="advanceSummarySub"></div>
+
+    <!-- BUILD331 · adelantos del próximo sueldo, como fila más del bento -->
+    <div class="bento-card advance-row" id="advanceSummary" hidden>
+      <div class="advance-row-text">
+        <div class="bento-head">
+          <div class="bento-icon"><svg class="ui-icon"><use href="#icon-calendar"></use></svg></div>
+          <div class="bento-label">Adelantado del próximo sueldo</div>
+        </div>
+        <div class="advance-row-sub" id="advanceSummarySub"></div>
+      </div>
+      <div class="bento-value"><span class="cur">S/</span><span id="advanceSummaryValue">0</span></div>
     </div>
-    <div class="advance-summary-value"><span class="cur">S/</span><span id="advanceSummaryValue">0</span></div>
   </div>
 
   <!-- Tarjetas -->
@@ -8278,7 +8279,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '330';
+  const LEDGER_BUILD = '331';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11556,14 +11557,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const total = redondearDinero(adelantos.reduce((sum, mov) => sum + (Number(mov.monto) || 0), 0));
     box.hidden = !(total > 0.005);
     if (box.hidden) return;
-    document.getElementById('advanceSummaryValue').textContent = fmt(total);
+    document.getElementById('advanceSummaryValue').textContent = fmtInt(total); // BUILD331 · entero, como el resto del bento
     const n = adelantos.length;
     document.getElementById('advanceSummarySub').textContent =
-      `${n} ${n === 1 ? 'movimiento' : 'movimientos'} · ya está en tu deuda, no en este ciclo`;
+      `${n === 1 ? '1 compra' : n + ' compras'} · ya está en tu deuda`;
   }
 
   function badgeCuotaMovimiento(mov) {
-    if (esMovimientoAdelanto(mov)) return '<span class="installment-badge advance-badge">Adelanto</span>'; // BUILD330
+    if (esMovimientoAdelanto(mov)) return '<span class="badge">Adelanto</span>'; // BUILD330/331 · badge neutro, como SEM
     const numero = Number(mov?.cuotaNumero);
     const total = Number(mov?.cuotasTotal);
     if (!mov?.planCuotasId || !Number.isFinite(numero) || !Number.isFinite(total)) return '';

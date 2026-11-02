@@ -1681,6 +1681,8 @@
     text-transform: uppercase;
   }
   body.dark .tc-bank-name { background: rgba(255,255,255,.07); }
+  /* BUILD334 · deuda pendiente por banco en Preparar nuevo ciclo */
+  .new-cycle-debt-bank-title { margin: 14px 0 6px; }
   .card-bank-badge {
     display: inline-flex;
     align-items: center;
@@ -8281,7 +8283,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '333';
+  const LEDGER_BUILD = '334';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -14749,8 +14751,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
             <div class="snapshot-row start-resource"><span>Cuenta ahorros</span><strong>${money(cuentas.cuentaAhorros)}</strong></div>
             <div class="snapshot-row start-fund"><span>Fondo reservado</span><strong>${money(cuentas.fondo)}</strong></div>
             <div class="snapshot-row"><span>Meta de ahorro</span><strong>${money(metaGuardada)}</strong></div>
+            ${deuda?.porBanco && deuda.fuente !== 'heads-up' ? ['interbank', 'bcp'].map(b => `
+            <div class="snapshot-row"><span>Deuda ${escapeHtml(nombreTarjeta(b))}</span><strong>${money(deuda.porBanco[b]?.soles || 0)}${Number(deuda.porBanco[b]?.dolares) > .005 ? `<small>+ ${usd(deuda.porBanco[b].dolares)}</small>` : ''}</strong></div>`).join('') : `
             <div class="snapshot-row"><span>Deuda soles</span><strong>${money(deudaSoles)}</strong></div>
-            <div class="snapshot-row"><span>Deuda dólares</span><strong>${usd(deudaDolares)}</strong></div>
+            <div class="snapshot-row"><span>Deuda dólares</span><strong>${usd(deudaDolares)}</strong></div>`}
             ${deudaDolares > .005 ? `<div class="snapshot-row"><span>TC deuda USD</span><strong>${rate(deudaTc)}</strong></div>` : ''}
             <div class="snapshot-row"><span>Origen de deuda</span><strong style="font-family:var(--font-ui);font-size:10px;">${fuenteDeuda}</strong></div>
             ${bancosHtml}
@@ -15420,16 +15424,18 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>
         <div class="new-cycle-bank-pull-status" id="newBankDebtPullStatus"></div>
       </div>
+      ${['interbank', 'bcp'].map(banco => `
+      <div class="new-cycle-debt-bank-title"><span class="card-bank-badge bank-${banco}">${escapeHtml(nombreTarjeta(banco))}</span></div>
       <div class="new-cycle-accounts">
         <div class="modal-field">
           <label>Deuda soles · S/</label>
-          <input type="number" min="0" step="0.01" id="newDeudaSoles" value="${state.deudaActual.toFixed(2)}" oninput="clearPulledBankDebtOnManualEdit(); previewNuevoCiclo()">
+          <input type="number" min="0" step="0.01" id="newDeudaSoles_${banco}" value="0.00" oninput="clearPulledBankDebtOnManualEdit(); previewNuevoCiclo()">
         </div>
         <div class="modal-field">
           <label>Deuda dólares · US$</label>
-          <input type="number" min="0" step="0.01" id="newDeudaDolares" value="0.00" oninput="clearPulledBankDebtOnManualEdit(); previewNuevoCiclo()">
+          <input type="number" min="0" step="0.01" id="newDeudaDolares_${banco}" value="0.00" oninput="clearPulledBankDebtOnManualEdit(); previewNuevoCiclo()">
         </div>
-      </div>
+      </div>`).join('')}
 
       <div class="rollover-breakdown new-cycle-derived">
         <div class="rollover-row">
@@ -15601,13 +15607,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     // Primera apertura: seleccionar todo lo detectado. Si ya aplicaste una selección,
     // conservarla para que puedas volver a editarla.
+    // BUILD334 · la preselección es local: si cancelas, no queda deuda jalada activa.
     const yaHaySeleccion = pendingBankDebtPullKeys instanceof Set && pendingBankDebtPullKeys.size > 0;
-    if (!yaHaySeleccion) pendingBankDebtPullKeys = new Set(grupos.map(grupo => grupo.key));
+    const preseleccion = yaHaySeleccion ? pendingBankDebtPullKeys : new Set(grupos.map(grupo => grupo.key));
 
     const filas = grupos.map(grupo => {
       const monedas = resumenMonedasGrupoTarjeta(grupo);
       const id = normalizarTarjetaId(grupo.tarjetaId);
-      const checked = pendingBankDebtPullKeys.has(grupo.key) ? 'checked' : '';
+      const checked = preseleccion.has(grupo.key) ? 'checked' : '';
       return `
         <label class="bank-pull-option">
           <input type="checkbox" data-bank-pull-key="${escapeHtml(grupo.key)}" ${checked} onchange="updatePullBankDebtNestedPreview()">
@@ -15655,10 +15662,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     }
     pendingBankDebtPullKeys = keys;
     const resumen = resumenGruposJalados(grupos);
-    const pen = document.getElementById('newDeudaSoles');
-    const usd = document.getElementById('newDeudaDolares');
-    if (pen) pen.value = resumen.soles.toFixed(2);
-    if (usd) usd.value = resumen.dolares.toFixed(2);
+    // BUILD334 · cada banco llena sus propios campos; el no seleccionado queda en 0.
+    ['interbank', 'bcp'].forEach(banco => {
+      const grupo = grupos.find(g => normalizarTarjetaId(g.tarjetaId) === banco);
+      const monedas = grupo ? resumenMonedasGrupoTarjeta(grupo) : { soles: 0, dolares: 0 };
+      const pen = document.getElementById('newDeudaSoles_' + banco);
+      const usd = document.getElementById('newDeudaDolares_' + banco);
+      if (pen) pen.value = (Number(monedas.soles) || 0).toFixed(2);
+      if (usd) usd.value = (Number(monedas.dolares) || 0).toFixed(2);
+    });
     closeNestedModal();
     previewNuevoCiclo();
     updateBankDebtPullStatus();
@@ -15733,7 +15745,18 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (gruposJalados.length > 0) {
       const resumen = resumenGruposJalados(gruposJalados);
       const dolaresEnSolesReferencia = redondearDinero(Math.max(0, resumen.totalReferencia - resumen.soles));
+      const porBanco = {};
+      ['interbank', 'bcp'].forEach(banco => {
+        const grupo = gruposJalados.find(g => normalizarTarjetaId(g.tarjetaId) === banco);
+        const monedas = grupo ? resumenMonedasGrupoTarjeta(grupo) : { soles: 0, dolares: 0 };
+        porBanco[banco] = {
+          soles: redondearDinero(Number(monedas.soles) || 0),
+          dolares: redondearDinero(Number(monedas.dolares) || 0),
+          totalSoles: redondearDinero(grupo ? Number(grupo.total) || 0 : 0)
+        };
+      });
       return {
+        porBanco,
         deudaSoles: redondearDinero(resumen.soles),
         deudaDolares: redondearDinero(resumen.dolares),
         tc: null,
@@ -15745,16 +15768,25 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       };
     }
 
-    const deudaSoles = Math.max(
-      0,
-      parseFloat(document.getElementById('newDeudaSoles')?.value) || 0
-    );
-    const deudaDolares = Math.max(
-      0,
-      parseFloat(document.getElementById('newDeudaDolares')?.value) || 0
-    );
+    // BUILD334 · deuda manual por banco (Interbank y BCP, cada uno en soles y dólares).
     const tc = getExchangeRate();
     const tcValido = Number.isFinite(Number(tc)) && Number(tc) > 0;
+    const porBanco = {};
+    let deudaSoles = 0;
+    let deudaDolares = 0;
+    ['interbank', 'bcp'].forEach(banco => {
+      const soles = Math.max(0, parseFloat(document.getElementById('newDeudaSoles_' + banco)?.value) || 0);
+      const dolares = Math.max(0, parseFloat(document.getElementById('newDeudaDolares_' + banco)?.value) || 0);
+      porBanco[banco] = {
+        soles: redondearDinero(soles),
+        dolares: redondearDinero(dolares),
+        totalSoles: redondearDinero(soles + (tcValido ? dolares * Number(tc) : 0))
+      };
+      deudaSoles += soles;
+      deudaDolares += dolares;
+    });
+    deudaSoles = redondearDinero(deudaSoles);
+    deudaDolares = redondearDinero(deudaDolares);
     const requiereTc = deudaDolares > 0.0001;
     const deudaDolaresEnSoles = tcValido
       ? redondearDinero(deudaDolares * Number(tc))
@@ -15762,6 +15794,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const total = redondearDinero(deudaSoles + deudaDolaresEnSoles);
 
     return {
+      porBanco,
       deudaSoles,
       deudaDolares,
       tc: tcValido ? Number(tc) : null,
@@ -15975,6 +16008,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       deudaInicioCiclo: {
         soles: redondearDinero(deudaDetalle.deudaSoles),
         dolares: redondearDinero(deudaDetalle.deudaDolares),
+        porBanco: deudaDetalle.porBanco || null, // BUILD334
         tcUsdPen: deudaDetalle.tc ? Number(deudaDetalle.tc) : null,
         dolaresEnSoles: redondearDinero(deudaDetalle.deudaDolaresEnSoles),
         totalSoles: deudaOficial,
@@ -16092,8 +16126,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       newCuentaAhorros: datos.cuentasInicioCiclo?.cuentaAhorros,
       newFondo: datos.cuentasInicioCiclo?.fondo ?? datos.intocable,
       newMeta: datos.meta,
-      newDeudaSoles: datos.deudaInicioCiclo?.soles ?? datos.deuda,
-      newDeudaDolares: datos.deudaInicioCiclo?.dolares ?? 0,
+      newDeudaSoles_interbank: datos.deudaInicioCiclo?.porBanco?.interbank?.soles ?? 0,
+      newDeudaDolares_interbank: datos.deudaInicioCiclo?.porBanco?.interbank?.dolares ?? 0,
+      newDeudaSoles_bcp: datos.deudaInicioCiclo?.porBanco?.bcp?.soles ?? 0,
+      newDeudaDolares_bcp: datos.deudaInicioCiclo?.porBanco?.bcp?.dolares ?? 0,
       newFechaInicio: datos.fechaInicio,
       newProximoSueldo: datos.fechaProximoSueldo,
       newNumSem: datos.numSem

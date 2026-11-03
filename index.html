@@ -6926,6 +6926,9 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
   font: inherit; font-size: 12px; font-weight: 650; letter-spacing: .02em; text-align: left; cursor: pointer;
 }
 .recurrentes-solo { margin: 4px 0 8px; }
+/* BUILD345 · recurrentes ocultos */
+.recurrentes-ocultos-link { margin: 12px 0 6px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 650; color: var(--ink-mute, #6b6b6b); text-decoration: underline; cursor: pointer; }
+.recurrentes-oculto-row { padding: 6px 0; }
 /* BUILD311 · bandeja de correos del banco */
 .bandeja-item { cursor: pointer; }
 .bandeja-item.bandeja-registrado { cursor: default; opacity: .55; }
@@ -8290,7 +8293,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '344';
+  const LEDGER_BUILD = '345';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11859,7 +11862,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const ciclos = getArchivedCycles().filter(c => Array.isArray(c?.movimientos) && c.movimientos.length).slice(0, RECURRENTES_CICLOS);
     const log = Array.isArray(state.log) ? state.log : [];
     const firma = ciclos.map(c => (c.id || c.fechaInicio) + ':' + c.movimientos.length).join('|')
-      + '#' + log.map(m => (m?.id || '') + (m?.detalle || '')).join(',');
+      + '#' + log.map(m => (m?.id || '') + (m?.detalle || '')).join(',')
+      + '#' + recurrentesOcultos().map(o => o.clave).join(','); // BUILD345
     if (recurrentesCache.firma === firma) return recurrentesCache.lista;
 
     const grupos = [];
@@ -11903,6 +11907,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         return null;
       }
       if (enEsteCiclo(g.clave)) return null;
+      if (estaOcultoRecurrente(g.clave)) return null; // BUILD345 · lo desmarcaste antes
       return {
         clave: g.clave,
         detalle: String(ultimo.detalle || '').replace(/\s*·\s*USD\s.*$/i, '').trim() || g.clave,
@@ -11919,12 +11924,55 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return lista;
   }
 
+  // BUILD345 · lo que desmarcas al reservar no se vuelve a sugerir; se puede recuperar desde el modal.
+  function recurrentesOcultos() {
+    return Array.isArray(state.recurrentesOcultos) ? state.recurrentesOcultos : [];
+  }
+
+  function estaOcultoRecurrente(clave) {
+    return recurrentesOcultos().some(o => o && similitudDetalles(clave, o.clave) >= UMBRAL_SUGERENCIA);
+  }
+
+  function ocultarRecurrentes(items) {
+    if (!items.length) return;
+    const actuales = recurrentesOcultos().filter(o => !items.some(it => it.clave === o.clave));
+    state.recurrentesOcultos = [
+      ...items.map(it => ({ clave: it.clave, detalle: it.detalle, ocultadoEn: new Date().toISOString() })),
+      ...actuales
+    ].slice(0, 100);
+  }
+
+  function volverASugerirRecurrente(i) {
+    const lista = recurrentesOcultos().slice();
+    if (!lista[Number(i)]) return;
+    lista.splice(Number(i), 1);
+    state.recurrentesOcultos = lista;
+    recurrentesCache = { firma: '', lista: [] };
+    saveState({ markModified: true, sync: true });
+    openGastosRecurrentes();
+    renderLog();
+  }
+
+  function toggleRecurrentesOcultos() {
+    const box = document.getElementById('recurrentesOcultosBox');
+    if (box) box.hidden = !box.hidden;
+  }
+
   function openGastosRecurrentes(desdeApertura = false) {
     const lista = gastosRecurrentes();
-    if (!lista.length) {
+    const ocultos = recurrentesOcultos();
+    if (!lista.length && (desdeApertura || !ocultos.length)) {
       if (!desdeApertura) toast('No hay recurrentes pendientes en este ciclo');
       return false;
     }
+    const ocultosHtml = ocultos.length ? `
+      <button type="button" class="recurrentes-ocultos-link" onclick="toggleRecurrentesOcultos()">Ocultos · ${ocultos.length}</button>
+      <div id="recurrentesOcultosBox" ${lista.length ? 'hidden' : ''}>
+        ${ocultos.map((o, i) => `<div class="bandeja-parecido-row recurrentes-oculto-row">
+          <span>${escapeHtml(o.detalle || o.clave)}</span>
+          <button type="button" class="btn-secondary" onclick="volverASugerirRecurrente(${i})">Volver a sugerir</button>
+        </div>`).join('')}
+      </div>` : '';
     const filas = lista.map((it, i) => `
       <label class="bank-pull-option">
         <input type="checkbox" data-recurrente="${i}" checked onchange="actualizarTotalRecurrentes()">
@@ -11938,14 +11986,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </label>`).join('');
     openModal(`
       <h2>Gastos <span class="accent">recurrentes</span></h2>
-      <p class="modal-sub">Aparecieron en ciclos anteriores y todavía no están en este. Los que marques se reservan como <b>proyectados</b> (repartidos entre los bloques); cuando llegue el cobro, lo realizas.</p>
+      ${lista.length ? `<p class="modal-sub">Aparecieron en ciclos anteriores y todavía no están en este. Los que marques se reservan como <b>proyectados</b> (repartidos entre los bloques); cuando llegue el cobro, lo realizas. Los que desmarques no se vuelven a sugerir.</p>
       <div class="bank-pull-list">${filas}</div>
       <div class="bank-pull-total-note">
         <div class="bank-pull-total-row"><span>Total a reservar</span><strong id="recurrentesTotal">S/ 0.00</strong></div>
-      </div>
+      </div>` : `<p class="modal-sub">No hay recurrentes pendientes en este ciclo.</p>`}
+      ${ocultosHtml}
       <div class="modal-buttons">
-        <button class="btn-secondary" onclick="closeModal()">${desdeApertura ? 'Ahora no' : 'Cancelar'}</button>
-        <button class="btn-primary" onclick="reservarGastosRecurrentes()">Reservar</button>
+        <button class="btn-secondary" onclick="closeModal()">${desdeApertura ? 'Ahora no' : (lista.length ? 'Cancelar' : 'Cerrar')}</button>
+        ${lista.length ? `<button class="btn-primary" onclick="reservarGastosRecurrentes()">Reservar</button>` : ''}
       </div>
     `);
     actualizarTotalRecurrentes();
@@ -11964,7 +12013,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const lista = gastosRecurrentes();
     const elegidos = [...document.querySelectorAll('input[data-recurrente]:checked')]
       .map(el => lista[Number(el.dataset.recurrente)]).filter(Boolean);
-    if (!elegidos.length) { toast('Marca al menos uno', true); return; }
+    const desmarcados = [...document.querySelectorAll('input[data-recurrente]:not(:checked)')]
+      .map(el => lista[Number(el.dataset.recurrente)]).filter(Boolean);
+    ocultarRecurrentes(desmarcados); // BUILD345
+    if (!elegidos.length) {
+      closeModal();
+      render();
+      toast(`${desmarcados.length} recurrente${desmarcados.length === 1 ? '' : 's'} ocultado${desmarcados.length === 1 ? '' : 's'}`);
+      return;
+    }
     let creados = 0, total = 0;
     elegidos.forEach(it => {
       // Mismo registro que un PROY manual: reserva repartida entre los bloques restantes.
@@ -11979,13 +12036,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     closeModal();
     projectedMenuOpen = true;
     render();
-    toast(`${creados} proyectado${creados === 1 ? '' : 's'} · S/ ${fmt(total)} reservados`);
+    toast(`${creados} proyectado${creados === 1 ? '' : 's'} · S/ ${fmt(total)} reservados${desmarcados.length ? ` · ${desmarcados.length} ocultado${desmarcados.length === 1 ? '' : 's'}` : ''}`);
   }
 
   function botonRecurrentesHtml() {
     const n = gastosRecurrentes().length;
-    if (!n) return '';
-    return `<button type="button" class="recurrentes-btn" onclick="openGastosRecurrentes()">↻ Recurrentes · ${n}</button>`;
+    if (!n && !recurrentesOcultos().length) return '';
+    // BUILD345 · sin sugerencias pero con ocultos, el botón sigue para poder recuperarlos.
+    return `<button type="button" class="recurrentes-btn" onclick="openGastosRecurrentes()">↻ Recurrentes${n ? ` · ${n}` : ''}</button>`;
   }
 
   function appendProjectedMovementsSummary(root) {

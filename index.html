@@ -6936,12 +6936,12 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 }
 /* BUILD349 · fila de recurrente: nombre > meta, monto centrado verticalmente */
 .bank-pull-option.recurrente-row {
-  grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 12px 14px;
+  grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 14px 16px;
 }
 .recurrente-row input { margin: 0; }
-.recurrente-info { min-width: 0; display: grid; gap: 4px; }
+.recurrente-info { min-width: 0; display: grid; gap: 6px; }
 .recurrente-nombre {
-  font-size: 14px; font-weight: 650; color: var(--ink); line-height: 1.2;
+  font-size: 17px; font-weight: 700; color: var(--ink); line-height: 1.15; letter-spacing: -.01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .recurrente-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; font-weight: 500; color: var(--ink-mute); }
@@ -6949,7 +6949,7 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
   padding: 2px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line-hi);
   font-size: 10px; font-weight: 650; letter-spacing: .02em; color: var(--ink-dim);
 }
-.recurrente-monto { font-size: 15px; font-weight: 700; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.recurrente-monto { font-size: 14px; font-weight: 600; color: var(--ink-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* BUILD348 · pie fijo del modal de recurrentes */
 .recurrentes-footer {
   position: sticky; bottom: -24px; z-index: 2;
@@ -8326,7 +8326,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '349';
+  const LEDGER_BUILD = '350';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {

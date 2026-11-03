@@ -6958,11 +6958,16 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
   color: var(--ink-mute); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; transition: transform .15s ease;
 }
 .recurrente-flecha.abierta { transform: rotate(90deg); }
-.recurrente-cobros { margin: 6px 0 2px 30px; display: grid; gap: 6px; }
+/* BUILD356 · el desglose vive dentro del mismo cuadro: sin cuadros propios, solo líneas finas */
+.recurrente-item.con-cobros { background: var(--line); border: 1px solid var(--line-hi); border-radius: 12px; overflow: hidden; }
+body.dark .recurrente-item.con-cobros { background: rgba(255,255,255,0.045); }
+.recurrente-item.con-cobros > .recurrente-row { background: transparent; border: 0; border-radius: 0; }
+.recurrente-cobros { margin: 0 16px 0 45px; display: grid; }
 .recurrente-cobro {
   display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
-  padding: 9px 12px; border: 1px solid var(--line-hi); border-radius: 12px; cursor: pointer;
+  padding: 10px 36px 10px 0; border-top: 1px solid var(--line-hi); cursor: pointer; /* 36px = columna de la flecha: montos alineados */
 }
+.recurrente-cobros .recurrente-cobro:last-child { padding-bottom: 12px; }
 .recurrente-cobro input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
 .recurrente-cobro-nombre { min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recurrente-cobro-nombre small { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--ink-mute); }
@@ -8344,7 +8349,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '355';
+  const LEDGER_BUILD = '356';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12106,7 +12111,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>`).join('')}
       </div>` : '';
     const filas = lista.map((it, i) => `
-      <div class="recurrente-item">
+      <div class="recurrente-item${it.cobrosDetalle.length > 1 ? ' con-cobros' : ''}">
       <label class="bank-pull-option recurrente-row${it.cobrosDetalle.length > 1 ? ' con-cobros' : ''}">
         <input type="checkbox" data-recurrente="${i}" checked onchange="cambioFilaRecurrente(${i})">
         <span class="recurrente-info">

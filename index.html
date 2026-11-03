@@ -6929,6 +6929,11 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 /* BUILD346 · marcar / desmarcar todos */
 .recurrentes-marcar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 .recurrentes-marcar .btn-secondary { font-size: 12px; padding: 10px 8px; }
+/* BUILD347 · botones sueltos de modal con el mismo redondeo que Cancelar/Reservar */
+.recurrentes-marcar .btn-secondary,
+.bandeja-parecido-row .btn-secondary {
+  border-radius: 14px; font-family: inherit; font-weight: 600; cursor: pointer; min-height: 40px;
+}
 /* BUILD345 · recurrentes ocultos */
 .recurrentes-ocultos-link { margin: 12px 0 6px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 650; color: var(--ink-mute, #6b6b6b); text-decoration: underline; cursor: pointer; }
 .recurrentes-oculto-row { padding: 6px 0; }
@@ -8296,7 +8301,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '346';
+  const LEDGER_BUILD = '347';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {

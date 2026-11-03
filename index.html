@@ -6951,6 +6951,23 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 }
 /* BUILD352 · monto igual que en Movimientos: Space Mono 18px bold, en negro */
 .recurrente-monto { font-family: var(--font-mono, "Space Mono", ui-monospace, monospace); font-size: 18px; font-weight: 700; letter-spacing: -0.045em; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* BUILD355 · cobros dentro de un recurrente */
+.bank-pull-option.recurrente-row.con-cobros { grid-template-columns: auto 1fr auto auto; }
+.recurrente-flecha {
+  width: 30px; height: 30px; margin-right: -6px; border: 0; border-radius: 10px; background: transparent;
+  color: var(--ink-mute); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; transition: transform .15s ease;
+}
+.recurrente-flecha.abierta { transform: rotate(90deg); }
+.recurrente-cobros { margin: 6px 0 2px 30px; display: grid; gap: 6px; }
+.recurrente-cobro {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
+  padding: 9px 12px; border: 1px solid var(--line-hi); border-radius: 12px; cursor: pointer;
+}
+.recurrente-cobro input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
+.recurrente-cobro-nombre { min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recurrente-cobro-nombre small { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--ink-mute); }
+.recurrente-cobro-monto { font-family: var(--font-mono, "Space Mono", ui-monospace, monospace); font-size: 14px; font-weight: 700; letter-spacing: -0.04em; color: var(--ink); white-space: nowrap; }
+.recurrente-item + .recurrente-item { margin-top: 0; }
 /* BUILD348 · pie fijo del modal de recurrentes */
 .recurrentes-footer {
   position: sticky; bottom: -24px; z-index: 2;
@@ -8327,7 +8344,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '354';
+  const LEDGER_BUILD = '355';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11936,7 +11953,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const log = Array.isArray(state.log) ? state.log : [];
     const firma = ciclos.map(c => (c.id || c.fechaInicio) + ':' + c.movimientos.length).join('|')
       + '#' + log.map(m => (m?.id || '') + (m?.detalle || '')).join(',')
-      + '#' + recurrentesOcultos().map(o => o.clave).join(','); // BUILD345
+      + '#' + recurrentesOcultos().map(o => o.clave).join(',') // BUILD345
+      + '#' + JSON.stringify(recurrentesPreferencias()); // BUILD355
     if (recurrentesCache.firma === firma) return recurrentesCache.lista;
 
     const grupos = [];
@@ -11985,10 +12003,30 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       }
       if (enEsteCiclo(g.claves)) return null;
       if (g.claves.some(k => estaOcultoRecurrente(k))) return null; // BUILD345 · lo desmarcaste antes
+      // BUILD355 · cobros del último ciclo, cada uno elegible. Preselección:
+      // 1) lo que elegiste la vez pasada para este gasto; 2) si no, los montos que se repiten en otros ciclos
+      //    (la suscripción) y no los sueltos (recargas de uso); 3) si nada coincide, todos.
+      const limpiarNombre = d => String(d || '').replace(/\s*·\s*USD\s.*$/i, '').replace(/^[A-Z]{2,5}\*\s*/i, '').trim();
+      const parecido = (a, b) => Math.abs(a - b) <= Math.max(a, b) * 0.02 + 0.01;
+      const otrosMontos = ordenes.slice(0, -1).flatMap(o => g.porCiclo.get(o).map(m => Number(m.monto) || 0));
+      const preferencia = preferenciaRecurrente(g.claves);
+      const cobrosDetalle = ultimos.map(m => {
+        const fecha = new Date(m.fechaISO || m.fecha || NaN);
+        return { detalle: limpiarNombre(m.detalle) || g.clave, monto: redondearDinero(Number(m.monto) || 0), fecha: Number.isNaN(fecha.getTime()) ? '' : formatFecha(fecha) };
+      });
+      let elegidos = cobrosDetalle.map(() => true);
+      if (cobrosDetalle.length > 1) {
+        if (preferencia) elegidos = cobrosDetalle.map(c => preferencia.montos.some(p => parecido(p, c.monto)));
+        else if (otrosMontos.length) elegidos = cobrosDetalle.map(c => otrosMontos.some(o => parecido(o, c.monto)));
+        if (!elegidos.some(Boolean)) elegidos = cobrosDetalle.map(() => true);
+      }
+      cobrosDetalle.forEach((c, i) => { c.elegido = elegidos[i]; });
       return {
         clave: g.clave,
-        detalle: String(ultimo.detalle || '').replace(/\s*·\s*USD\s.*$/i, '').replace(/^[A-Z]{2,5}\*\s*/i, '').trim() || g.clave, // BUILD354 · sin "EBN*"
-        monto: redondearDinero(ultimos.reduce((t, m) => t + (Number(m.monto) || 0), 0)),
+        claves: g.claves.slice(),
+        detalle: limpiarNombre(ultimo.detalle) || g.clave, // BUILD354 · sin "EBN*"
+        monto: redondearDinero(cobrosDetalle.filter(c => c.elegido).reduce((t, c) => t + c.monto, 0)),
+        cobrosDetalle,
         cobros: ultimos.length,
         nombres: g.nombres.size, // BUILD354 · cuántos nombres distintos agrupa
         ciclos: g.porCiclo.size,
@@ -12000,6 +12038,22 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     recurrentesCache = { firma, lista };
     return lista;
+  }
+
+  // BUILD355 · qué cobros elegiste para un gasto con varios cobros (p. ej. solo la suscripción de Claude,
+  // sin las recargas de uso). La próxima vez se preseleccionan los mismos montos.
+  function recurrentesPreferencias() {
+    return Array.isArray(state.recurrentesPreferencias) ? state.recurrentesPreferencias : [];
+  }
+
+  function preferenciaRecurrente(claves) {
+    return recurrentesPreferencias().find(p => p && Array.isArray(p.claves)
+      && p.claves.some(k => claves.some(c => mismoRecurrente(c, k)))) || null;
+  }
+
+  function guardarPreferenciaRecurrente(item, montos) {
+    const resto = recurrentesPreferencias().filter(p => !(p && Array.isArray(p.claves) && p.claves.some(k => item.claves.some(c => mismoRecurrente(c, k)))));
+    state.recurrentesPreferencias = [{ claves: item.claves.slice(0, 10), montos, guardadoEn: new Date().toISOString() }, ...resto].slice(0, 100);
   }
 
   // BUILD345 · lo que desmarcas al reservar no se vuelve a sugerir; se puede recuperar desde el modal.
@@ -12052,14 +12106,24 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>`).join('')}
       </div>` : '';
     const filas = lista.map((it, i) => `
-      <label class="bank-pull-option recurrente-row">
-        <input type="checkbox" data-recurrente="${i}" checked onchange="actualizarTotalRecurrentes()">
+      <div class="recurrente-item">
+      <label class="bank-pull-option recurrente-row${it.cobrosDetalle.length > 1 ? ' con-cobros' : ''}">
+        <input type="checkbox" data-recurrente="${i}" checked onchange="cambioFilaRecurrente(${i})">
         <span class="recurrente-info">
           <span class="recurrente-nombre">${escapeHtml(it.detalle)}</span>
           <span class="recurrente-meta">${it.categoria ? escapeHtml(it.categoria) + ' · ' : ''}${it.ciclos} de ${it.de} ciclos${it.cobros > 1 ? ` · ${it.cobros} cobros` : ''}${it.nombres > 1 ? ` · ${it.nombres} nombres` : ''}</span>
         </span>
-        <span class="recurrente-monto">S/${fmt(it.monto)}</span>
-      </label>`).join('');
+        <span class="recurrente-monto" id="recMonto-${i}">S/${fmt(it.monto)}</span>
+        ${it.cobrosDetalle.length > 1 ? `<button type="button" class="recurrente-flecha" id="recFlecha-${i}" aria-label="Ver cobros" onclick="event.preventDefault(); event.stopPropagation(); toggleCobrosRecurrente(${i})">›</button>` : ''}
+      </label>
+      ${it.cobrosDetalle.length > 1 ? `<div class="recurrente-cobros" id="recCobros-${i}" hidden>
+        ${it.cobrosDetalle.map((c, j) => `<label class="recurrente-cobro">
+          <input type="checkbox" data-recurrente-cobro="${i}" data-cobro="${j}" ${c.elegido ? 'checked' : ''} onchange="cambioCobroRecurrente(${i})">
+          <span class="recurrente-cobro-nombre">${escapeHtml(c.detalle)}${c.fecha ? `<small>${escapeHtml(c.fecha)}</small>` : ''}</span>
+          <span class="recurrente-cobro-monto">S/${fmt(c.monto)}</span>
+        </label>`).join('')}
+      </div>` : ''}
+      </div>`).join('');
     openModal(`
       <h2>Gastos <span class="accent">recurrentes</span></h2>
       ${lista.length ? `<p class="modal-sub">Aparecieron en ciclos anteriores y todavía no están en este. Los que marques se reservan como <b>proyectados</b> (repartidos entre los bloques); cuando llegue el cobro, lo realizas. Los que desmarques no se vuelven a sugerir.</p>
@@ -12090,10 +12154,51 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     actualizarTotalRecurrentes();
   }
 
+  // BUILD355 · cobros dentro de un gasto agrupado.
+  function toggleCobrosRecurrente(i) {
+    const panel = document.getElementById('recCobros-' + i);
+    const flecha = document.getElementById('recFlecha-' + i);
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    if (flecha) flecha.classList.toggle('abierta', !panel.hidden);
+  }
+
+  function cobrosElegidosRecurrente(i) {
+    const item = gastosRecurrentes()[Number(i)];
+    if (!item) return [];
+    const checks = [...document.querySelectorAll(`input[data-recurrente-cobro="${i}"]`)];
+    if (!checks.length) return item.cobrosDetalle.filter(c => c.elegido);
+    return checks.filter(el => el.checked).map(el => item.cobrosDetalle[Number(el.dataset.cobro)]).filter(Boolean);
+  }
+
+  function montoElegidoRecurrente(i) {
+    return redondearDinero(cobrosElegidosRecurrente(i).reduce((t, c) => t + c.monto, 0));
+  }
+
+  function cambioCobroRecurrente(i) {
+    const monto = montoElegidoRecurrente(i);
+    const el = document.getElementById('recMonto-' + i);
+    if (el) el.textContent = `S/${fmt(monto)}`;
+    const fila = document.querySelector(`input[data-recurrente="${i}"]`);
+    if (fila) fila.checked = monto > 0.005;
+    actualizarTotalRecurrentes();
+  }
+
+  function cambioFilaRecurrente(i) {
+    // Marcar la fila sin ningún cobro elegido vuelve a marcar todos sus cobros.
+    const fila = document.querySelector(`input[data-recurrente="${i}"]`);
+    if (fila?.checked && !(montoElegidoRecurrente(i) > 0.005)) {
+      document.querySelectorAll(`input[data-recurrente-cobro="${i}"]`).forEach(el => { el.checked = true; });
+      cambioCobroRecurrente(i);
+      return;
+    }
+    actualizarTotalRecurrentes();
+  }
+
   function actualizarTotalRecurrentes() {
     const lista = gastosRecurrentes();
     const total = [...document.querySelectorAll('input[data-recurrente]:checked')]
-      .reduce((t, el) => t + (Number(lista[Number(el.dataset.recurrente)]?.monto) || 0), 0);
+      .reduce((t, el) => t + montoElegidoRecurrente(el.dataset.recurrente), 0); // BUILD355
     const el = document.getElementById('recurrentesTotal');
     if (el) el.textContent = `S/ ${fmt(total)}`;
   }
@@ -12101,7 +12206,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function reservarGastosRecurrentes() {
     const lista = gastosRecurrentes();
     const elegidos = [...document.querySelectorAll('input[data-recurrente]:checked')]
-      .map(el => lista[Number(el.dataset.recurrente)]).filter(Boolean);
+      .map(el => {
+        const item = lista[Number(el.dataset.recurrente)];
+        if (!item) return null;
+        const cobros = cobrosElegidosRecurrente(el.dataset.recurrente); // BUILD355
+        if (item.cobrosDetalle.length > 1) guardarPreferenciaRecurrente(item, cobros.map(c => c.monto));
+        return { ...item, detalle: cobros.length === 1 ? cobros[0].detalle : item.detalle, monto: redondearDinero(cobros.reduce((t, c) => t + c.monto, 0)) };
+      }).filter(it => it && it.monto > 0.005);
     const desmarcados = [...document.querySelectorAll('input[data-recurrente]:not(:checked)')]
       .map(el => lista[Number(el.dataset.recurrente)]).filter(Boolean);
     ocultarRecurrentes(desmarcados); // BUILD345

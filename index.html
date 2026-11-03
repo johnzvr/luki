@@ -8327,7 +8327,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '352';
+  const LEDGER_BUILD = '353';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12014,7 +12014,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <span class="recurrente-nombre">${escapeHtml(it.detalle)}</span>
           <span class="recurrente-meta">${it.categoria ? escapeHtml(it.categoria) + ' · ' : ''}${it.ciclos} de ${it.de} ciclos${it.cobros > 1 ? ` · ${it.cobros} cobros` : ''}</span>
         </span>
-        <span class="recurrente-monto">S/ ${fmt(it.monto)}</span>
+        <span class="recurrente-monto">S/${fmt(it.monto)}</span>
       </label>`).join('');
     openModal(`
       <h2>Gastos <span class="accent">recurrentes</span></h2>

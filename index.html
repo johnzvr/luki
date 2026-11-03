@@ -6934,6 +6934,22 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 .bandeja-parecido-row .btn-secondary {
   border-radius: 14px; font-family: inherit; font-weight: 600; cursor: pointer; min-height: 40px;
 }
+/* BUILD349 · fila de recurrente: nombre > meta, monto centrado verticalmente */
+.bank-pull-option.recurrente-row {
+  grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 12px 14px;
+}
+.recurrente-row input { margin: 0; }
+.recurrente-info { min-width: 0; display: grid; gap: 4px; }
+.recurrente-nombre {
+  font-size: 14px; font-weight: 650; color: var(--ink); line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.recurrente-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; font-weight: 500; color: var(--ink-mute); }
+.recurrente-cat {
+  padding: 2px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line-hi);
+  font-size: 10px; font-weight: 650; letter-spacing: .02em; color: var(--ink-dim);
+}
+.recurrente-monto { font-size: 15px; font-weight: 700; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* BUILD348 · pie fijo del modal de recurrentes */
 .recurrentes-footer {
   position: sticky; bottom: -24px; z-index: 2;
@@ -8310,7 +8326,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '348';
+  const LEDGER_BUILD = '349';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11991,15 +12007,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>`).join('')}
       </div>` : '';
     const filas = lista.map((it, i) => `
-      <label class="bank-pull-option">
+      <label class="bank-pull-option recurrente-row">
         <input type="checkbox" data-recurrente="${i}" checked onchange="actualizarTotalRecurrentes()">
-        <span class="bank-pull-option-main">
-          <span class="bank-pull-option-top">
-            <span class="bank-pull-option-title">${escapeHtml(it.detalle)}</span>
-            <span style="white-space:nowrap;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;">S/ ${fmt(it.monto)}</span>
-          </span>
-          <span class="bank-pull-option-range">${it.ciclos === 1 ? 'En 1' : 'En ' + it.ciclos} de tus últimos ${it.de} ciclos${it.cobros > 1 ? ` · ${it.cobros} cobros el último` : ''}${it.categoria ? ' · ' + escapeHtml(it.categoria) : ''}</span>
+        <span class="recurrente-info">
+          <span class="recurrente-nombre">${escapeHtml(it.detalle)}</span>
+          <span class="recurrente-meta">${it.categoria ? `<span class="recurrente-cat">${escapeHtml(it.categoria)}</span>` : ''}<span>${it.ciclos} de ${it.de} ciclos${it.cobros > 1 ? ` · ${it.cobros} cobros` : ''}</span></span>
         </span>
+        <span class="recurrente-monto">S/ ${fmt(it.monto)}</span>
       </label>`).join('');
     openModal(`
       <h2>Gastos <span class="accent">recurrentes</span></h2>

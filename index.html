@@ -8290,7 +8290,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '343';
+  const LEDGER_BUILD = '344';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11841,6 +11841,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   const RECURRENTES_MIN_CICLOS = 2;
   const RECURRENTES_MAX_COBROS = 3;
   const RECURRENTES_TOLERANCIA = 0.15;
+  // BUILD344 · la categoría decide qué tan fácil entra un gasto como recurrente.
+  const RECURRENTES_NUNCA = ['Comida fuera', 'Supermercado', 'Ocio', 'Transporte', 'Tecnología']; // compras sueltas (ceviche, KFC…)
+  const RECURRENTES_ESTRICTO = ['Otros', 'Efectivo / transferencias', '']; // solo si es idéntico: 1 cobro por ciclo, ±2%
+  const RECURRENTES_TOLERANCIA_ESTRICTA = 0.02;
   let recurrentesCache = { firma: '', lista: [] };
 
   function movimientoCuentaParaRecurrente(mov) {
@@ -11881,13 +11885,23 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       // BUILD341 · lo marcado como Suscripciones se sugiere siempre (aunque aparezca en un solo ciclo
       // o haya cambiado de precio); el resto necesita repetirse con monto estable.
       const esSuscripcion = todos.some(m => normalizarCategoriaMovimiento(m.categoria) === 'Suscripciones');
-      if (!esSuscripcion && g.porCiclo.size < RECURRENTES_MIN_CICLOS) return null;
-      if ([...g.porCiclo.values()].some(movs => movs.length > RECURRENTES_MAX_COBROS)) return null;
       const ordenes = [...g.porCiclo.keys()].sort((a, b) => a - b);
       const ultimos = g.porCiclo.get(ordenes[ordenes.length - 1]);
       const ultimo = ultimos[ultimos.length - 1];
       const referencia = Number(ultimo.monto) || 0;
-      if (!esSuscripcion && !todos.every(m => Math.abs((Number(m.monto) || 0) - referencia) <= referencia * RECURRENTES_TOLERANCIA + 0.01)) return null;
+      if (!esSuscripcion) {
+        // BUILD344 · categoría del gasto: la más reciente que tenga una.
+        const categoriaGrupo = normalizarCategoriaMovimiento([...todos].reverse().find(m => normalizarCategoriaMovimiento(m.categoria))?.categoria);
+        if (RECURRENTES_NUNCA.includes(categoriaGrupo)) return null;
+        const estricto = RECURRENTES_ESTRICTO.includes(categoriaGrupo);
+        if (g.porCiclo.size < RECURRENTES_MIN_CICLOS) return null;
+        const maxCobros = estricto ? 1 : RECURRENTES_MAX_COBROS;
+        if ([...g.porCiclo.values()].some(movs => movs.length > maxCobros)) return null;
+        const tolerancia = estricto ? RECURRENTES_TOLERANCIA_ESTRICTA : RECURRENTES_TOLERANCIA;
+        if (!todos.every(m => Math.abs((Number(m.monto) || 0) - referencia) <= referencia * tolerancia + 0.01)) return null;
+      } else if ([...g.porCiclo.values()].some(movs => movs.length > RECURRENTES_MAX_COBROS)) {
+        return null;
+      }
       if (enEsteCiclo(g.clave)) return null;
       return {
         clave: g.clave,
@@ -11908,7 +11922,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function openGastosRecurrentes(desdeApertura = false) {
     const lista = gastosRecurrentes();
     if (!lista.length) {
-      if (!desdeApertura) toast('No encontré gastos que se repitan y falten en este ciclo');
+      if (!desdeApertura) toast('No hay recurrentes pendientes en este ciclo');
       return false;
     }
     const filas = lista.map((it, i) => `
@@ -11923,7 +11937,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </span>
       </label>`).join('');
     openModal(`
-      <h2>Gastos que <span class="accent">se repiten</span></h2>
+      <h2>Gastos <span class="accent">recurrentes</span></h2>
       <p class="modal-sub">Aparecieron en ciclos anteriores y todavía no están en este. Los que marques se reservan como <b>proyectados</b> (repartidos entre los bloques); cuando llegue el cobro, lo realizas.</p>
       <div class="bank-pull-list">${filas}</div>
       <div class="bank-pull-total-note">
@@ -11971,7 +11985,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function botonRecurrentesHtml() {
     const n = gastosRecurrentes().length;
     if (!n) return '';
-    return `<button type="button" class="recurrentes-btn" onclick="openGastosRecurrentes()">↻ Gastos que se repiten · ${n}</button>`;
+    return `<button type="button" class="recurrentes-btn" onclick="openGastosRecurrentes()">↻ Recurrentes · ${n}</button>`;
   }
 
   function appendProjectedMovementsSummary(root) {

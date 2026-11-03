@@ -6976,6 +6976,17 @@ body.dark .recurrente-item.con-cobros { background: rgba(255,255,255,0.045); }
 .recurrente-cobro-nombre small { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--ink-mute); }
 .recurrente-cobro-monto { font-family: var(--font-mono, "Space Mono", ui-monospace, monospace); font-size: 14px; font-weight: 700; letter-spacing: -0.04em; color: var(--ink); white-space: nowrap; }
 .recurrente-item + .recurrente-item { margin-top: 0; }
+/* BUILD361 · marcar como recurrente */
+.fijo-buscar { width: 100%; margin: 4px 0 10px; padding: 12px 14px; border: 1px solid var(--line-hi); border-radius: 14px; background: transparent; font: inherit; font-size: 14px; color: var(--ink); }
+.fijo-lista { display: grid; }
+.fijo-fila { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line-hi); }
+.fijo-fila[hidden] { display: none; }
+.fijo-info { min-width: 0; display: grid; gap: 2px; }
+.fijo-nombre { font-size: 14px; font-weight: 650; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fijo-meta { font-size: 11px; color: var(--ink-mute); }
+.fijo-monto { font-family: var(--font-mono, "Space Mono", ui-monospace, monospace); font-size: 14px; font-weight: 700; letter-spacing: -0.04em; color: var(--ink); white-space: nowrap; }
+.fijo-fila .btn-secondary { border-radius: 14px; padding: 8px 12px; font: inherit; font-size: 12px; font-weight: 600; min-height: 36px; cursor: pointer; }
+.fijo-titulo { margin: 16px 0 4px; font-size: 12px; font-weight: 700; color: var(--ink); }
 /* BUILD348 · pie fijo del modal de recurrentes */
 .recurrentes-footer {
   position: sticky; bottom: -24px; z-index: 2;
@@ -8352,7 +8363,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '360';
+  const LEDGER_BUILD = '361';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11962,7 +11973,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const firma = ciclos.map(c => (c.id || c.fechaInicio) + ':' + c.movimientos.length).join('|')
       + '#' + log.map(m => (m?.id || '') + (m?.detalle || '')).join(',')
       + '#' + recurrentesOcultos().map(o => o.clave).join(',') // BUILD345
-      + '#' + JSON.stringify(recurrentesPreferencias()); // BUILD355
+      + '#' + JSON.stringify(recurrentesPreferencias()) // BUILD355
+      + '#' + recurrentesFijos().map(f => f.clave).join(','); // BUILD361
     if (recurrentesCache.firma === firma) return recurrentesCache.lista;
 
     const grupos = [];
@@ -11991,7 +12003,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       const todos = [...g.porCiclo.values()].flat();
       // BUILD341 · lo marcado como Suscripciones se sugiere siempre (aunque aparezca en un solo ciclo
       // o haya cambiado de precio); el resto necesita repetirse con monto estable.
-      const esSuscripcion = todos.some(m => normalizarCategoriaMovimiento(m.categoria) === 'Suscripciones');
+      const esSuscripcion = todos.some(m => normalizarCategoriaMovimiento(m.categoria) === 'Suscripciones')
+        || esFijoRecurrente(g.claves); // BUILD361 · marcado por ti: se trata como suscripción
       const ordenes = [...g.porCiclo.keys()].sort((a, b) => a - b);
       const ultimos = g.porCiclo.get(ordenes[ordenes.length - 1]);
       const ultimo = ultimos[ultimos.length - 1];
@@ -12048,7 +12061,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         ciclos: g.porCiclo.size,
         de: ciclos.length,
         suscripcion: esSuscripcion,
-        categoria: (esSuscripcion ? 'Suscripciones' : normalizarCategoriaMovimiento(ultimo.categoria)) || ''
+        categoria: normalizarCategoriaMovimiento(ultimo.categoria) || (esSuscripcion ? 'Suscripciones' : '')
       };
     }).filter(Boolean).sort((a, b) => b.monto - a.monto);
 
@@ -12070,6 +12083,95 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function guardarPreferenciaRecurrente(item, montos) {
     const resto = recurrentesPreferencias().filter(p => !(p && Array.isArray(p.claves) && p.claves.some(k => item.claves.some(c => mismoRecurrente(c, k)))));
     state.recurrentesPreferencias = [{ claves: item.claves.slice(0, 10), montos, guardadoEn: new Date().toISOString() }, ...resto].slice(0, 100);
+  }
+
+  // BUILD361 · gastos que TÚ marcaste como recurrentes (por nombre): se sugieren siempre, como una
+  // suscripción, sin cambiar su categoría (p. ej. Smart Fit en Fitness con un solo ciclo de datos).
+  function recurrentesFijos() {
+    return Array.isArray(state.recurrentesFijos) ? state.recurrentesFijos : [];
+  }
+
+  function esFijoRecurrente(claves) {
+    return recurrentesFijos().some(f => f && claves.some(c => mismoRecurrente(c, f.clave)));
+  }
+
+  function marcarFijoRecurrente(detalle, fijo) {
+    const clave = claveDetalleAprendizaje(detalle);
+    if (!clave) return;
+    const resto = recurrentesFijos().filter(f => !(f && mismoRecurrente(clave, f.clave)));
+    state.recurrentesFijos = fijo
+      ? [{ clave, detalle: String(detalle || '').replace(/\s*·\s*USD\s.*$/i, '').trim(), marcadoEn: new Date().toISOString() }, ...resto].slice(0, 100)
+      : resto;
+    // Marcarlo como recurrente también lo saca de Ocultos.
+    if (fijo) state.recurrentesOcultos = recurrentesOcultos().filter(o => !(o && mismoRecurrente(clave, o.clave)));
+    recurrentesCache = { firma: '', lista: [] };
+  }
+
+  // Gastos de los últimos 3 ciclos que aún no salen en Recurrentes (para marcarlos a mano).
+  function candidatosFijosRecurrentes() {
+    const sugeridos = gastosRecurrentes();
+    const ciclos = getArchivedCycles().filter(c => Array.isArray(c?.movimientos)).slice(0, RECURRENTES_CICLOS);
+    const vistos = [];
+    ciclos.forEach(ciclo => ciclo.movimientos.forEach(mov => {
+      if (!movimientoCuentaParaRecurrente(mov)) return;
+      const clave = claveDetalleAprendizaje(mov.detalle);
+      if (!clave || clave.length < 3) return;
+      if (sugeridos.some(it => (it.claves || [it.clave]).some(k => mismoRecurrente(clave, k)))) return;
+      const previo = vistos.find(v => mismoRecurrente(clave, v.clave));
+      if (previo) { previo.veces++; return; }
+      vistos.push({ clave, detalle: String(mov.detalle || '').replace(/\s*·\s*USD\s.*$/i, '').replace(/^[A-Z]{2,5}\*\s*/i, '').trim(), monto: redondearDinero(Number(mov.monto) || 0), categoria: normalizarCategoriaMovimiento(mov.categoria) || '', veces: 1 });
+    }));
+    return vistos.sort((a, b) => a.detalle.localeCompare(b.detalle, 'es'));
+  }
+
+  function openMarcarFijoRecurrente() {
+    const candidatos = candidatosFijosRecurrentes();
+    const fijos = recurrentesFijos();
+    openModal(`
+      <h2>Marcar como <span class="accent">recurrente</span></h2>
+      <p class="modal-sub">Elige un gasto de tus últimos ciclos. Se sugerirá siempre en Recurrentes, como una suscripción, sin cambiar su categoría.</p>
+      <input type="search" id="fijoBuscar" class="fijo-buscar" placeholder="Buscar (p. ej. smart fit)" autocomplete="off" oninput="filtrarFijosRecurrentes()">
+      <div class="fijo-lista">
+        ${candidatos.length ? candidatos.map((c, i) => `<div class="fijo-fila" data-buscar="${escapeHtml((c.detalle + ' ' + c.categoria).toLowerCase())}">
+          <span class="fijo-info"><span class="fijo-nombre">${escapeHtml(c.detalle)}</span><span class="fijo-meta">${escapeHtml(c.categoria || 'Sin categoría')}${c.veces > 1 ? ` · ${c.veces} cobros` : ''}</span></span>
+          <span class="fijo-monto">S/${fmt(c.monto)}</span>
+          <button type="button" class="btn-secondary" onclick="agregarFijoRecurrente(${i})">Agregar</button>
+        </div>`).join('') : '<p class="modal-sub">No hay otros gastos en tus últimos ciclos.</p>'}
+      </div>
+      ${fijos.length ? `<div class="fijo-titulo">Marcados por ti · ${fijos.length}</div>
+        ${fijos.map((f, i) => `<div class="fijo-fila"><span class="fijo-info"><span class="fijo-nombre">${escapeHtml(f.detalle || f.clave)}</span></span><span></span>
+          <button type="button" class="btn-secondary" onclick="quitarFijoRecurrente(${i})">Quitar</button></div>`).join('')}` : ''}
+      <div class="modal-buttons">
+        <button class="btn-secondary" onclick="openGastosRecurrentes()">Volver</button>
+      </div>
+    `);
+  }
+
+  function filtrarFijosRecurrentes() {
+    const q = String(document.getElementById('fijoBuscar')?.value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    document.querySelectorAll('.fijo-lista .fijo-fila').forEach(el => {
+      const texto = String(el.dataset.buscar || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      el.hidden = !!q && !texto.includes(q);
+    });
+  }
+
+  function agregarFijoRecurrente(i) {
+    const c = candidatosFijosRecurrentes()[Number(i)];
+    if (!c) return;
+    marcarFijoRecurrente(c.detalle, true);
+    saveState({ markModified: true, sync: true });
+    toast(`${c.detalle} · marcado como recurrente`);
+    openGastosRecurrentes();
+    renderLog();
+  }
+
+  function quitarFijoRecurrente(i) {
+    const f = recurrentesFijos()[Number(i)];
+    if (!f) return;
+    marcarFijoRecurrente(f.detalle || f.clave, false);
+    saveState({ markModified: true, sync: true });
+    openMarcarFijoRecurrente();
+    renderLog();
   }
 
   // BUILD345 · lo que desmarcas al reservar no se vuelve a sugerir; se puede recuperar desde el modal.
@@ -12109,10 +12211,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function openGastosRecurrentes(desdeApertura = false) {
     const lista = gastosRecurrentes();
     const ocultos = recurrentesOcultos();
-    if (!lista.length && (desdeApertura || !ocultos.length)) {
-      if (!desdeApertura) toast('No hay recurrentes pendientes en este ciclo');
-      return false;
-    }
+    if (!lista.length && desdeApertura) return false;
     const ocultosHtml = ocultos.length ? `
       <button type="button" class="recurrentes-ocultos-link" onclick="toggleRecurrentesOcultos()">Ocultos · ${ocultos.length}</button>
       <div id="recurrentesOcultosBox" ${lista.length ? 'hidden' : ''}>
@@ -12143,6 +12242,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       <h2>Gastos <span class="accent">recurrentes</span></h2>
       ${lista.length ? `<p class="modal-sub">Aparecieron en ciclos anteriores y todavía no están en este. Los que marques se reservan como <b>proyectados</b> (repartidos entre los bloques); cuando llegue el cobro, lo realizas. Los que desmarques no se vuelven a sugerir.</p>
       <div class="bank-pull-list">${filas}</div>` : `<p class="modal-sub">No hay recurrentes pendientes en este ciclo.</p>`}
+      <button type="button" class="recurrentes-ocultos-link" onclick="openMarcarFijoRecurrente()">＋ Marcar otro gasto como recurrente</button>
       ${ocultosHtml}
       <!-- BUILD348 · total y botones fijos abajo, flotando sobre la lista (como la barra de registro) -->
       <div class="recurrentes-footer">
@@ -12256,7 +12356,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function botonRecurrentesHtml() {
     const n = gastosRecurrentes().length;
-    if (!n && !recurrentesOcultos().length) return '';
+    if (!n && !getArchivedCycles().some(c => Array.isArray(c?.movimientos) && c.movimientos.length)) return ''; // BUILD361 · siempre accesible si hay historial
     // BUILD345 · sin sugerencias pero con ocultos, el botón sigue para poder recuperarlos.
     return `<button type="button" class="recurrentes-btn" onclick="openGastosRecurrentes()">↻ Recurrentes${n ? ` · ${n}` : ''}</button>`;
   }
@@ -14151,6 +14251,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <span>A · Lo pago con el próximo sueldo</span>
         <input type="checkbox" id="editMovementAdvance" ${esMovimientoAdelanto(mov) ? 'checked' : ''}>
       </label>` : ''}
+      <label class="edit-sem-row" id="editMovementFijoRow">
+        <span>Recurrente · sugerirlo cada ciclo</span>
+        <input type="checkbox" id="editMovementFijo" ${esFijoRecurrente([claveDetalleAprendizaje(mov.detalle)]) ? 'checked' : ''}>
+      </label>
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
         <button class="btn-primary" onclick="saveMovementEdit(${idx})">Guardar cambios</button>
@@ -14295,6 +14399,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (!Number.isFinite(monto) || monto <= 0 || !['S', 'DS', 'F', 'FDS'].includes(tipo)) {
       toast('Revisa el monto y el tipo', true);
       return;
+    }
+    // BUILD361 · casilla Recurrente: se guarda por nombre, no cambia el movimiento ni ningún monto.
+    const fijoEl = document.getElementById('editMovementFijo');
+    if (fijoEl) {
+      const yaFijo = esFijoRecurrente([claveDetalleAprendizaje(detalle)]);
+      if (fijoEl.checked !== yaFijo) marcarFijoRecurrente(detalle, fijoEl.checked);
     }
 
     const currentMov = state.log[idx];

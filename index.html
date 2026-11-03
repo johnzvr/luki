@@ -8290,7 +8290,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '341';
+  const LEDGER_BUILD = '342';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11663,7 +11663,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function impactoPresupuestoMovimiento(mov) {
     const monto = Math.max(0, Number(mov?.monto) || 0);
-    const explicito = Number(mov?.impactoPresupuesto);
+    // BUILD342 · los ciclos archivados guardan impactoPresupuesto: null cuando no hay uno propio.
+    // Number(null) es 0: ese "0" hacía que el Gastado del ciclo cerrado ignorara casi todo.
+    const crudo = mov?.impactoPresupuesto;
+    if (crudo === null || crudo === undefined || crudo === '') return monto;
+    const explicito = Number(crudo);
     if (!Number.isFinite(explicito) || explicito < 0) return monto;
     return redondearDinero(Math.min(monto, explicito));
   }

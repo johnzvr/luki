@@ -6952,12 +6952,14 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 /* BUILD352 · monto igual que en Movimientos: Space Mono 18px bold, en negro */
 .recurrente-monto { font-family: var(--font-mono, "Space Mono", ui-monospace, monospace); font-size: 18px; font-weight: 700; letter-spacing: -0.045em; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* BUILD355 · cobros dentro de un recurrente */
-.bank-pull-option.recurrente-row.con-cobros { grid-template-columns: auto 1fr auto auto; }
-.recurrente-flecha {
-  width: 30px; height: 30px; margin-right: -6px; border: 0; border-radius: 10px; background: transparent;
-  color: var(--ink-mute); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; transition: transform .15s ease;
+/* BUILD358 · "N cobros" es el control: discreto, en la línea gris; el monto no pierde su columna */
+.recurrente-ver-cobros {
+  display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: none;
+  font: inherit; color: var(--ink-dim); text-decoration: underline; text-decoration-color: var(--line-hi);
+  text-underline-offset: 2px; cursor: pointer;
 }
-.recurrente-flecha.abierta { transform: rotate(90deg); }
+.recurrente-chev { display: inline-block; font-size: 12px; line-height: 1; transition: transform .15s ease; }
+.recurrente-ver-cobros.abierta .recurrente-chev { transform: rotate(90deg); }
 /* BUILD356 · el desglose vive dentro del mismo cuadro: sin cuadros propios, solo líneas finas */
 .recurrente-item.con-cobros { background: var(--line); border: 1px solid var(--line-hi); border-radius: 12px; overflow: hidden; }
 body.dark .recurrente-item.con-cobros { background: rgba(255,255,255,0.045); }
@@ -6966,7 +6968,7 @@ body.dark .recurrente-item.con-cobros { background: rgba(255,255,255,0.045); }
 .recurrente-cobros[hidden] { display: none; } /* BUILD357 · sin esto, display:grid ganaba a hidden y el desglose nunca se plegaba */
 .recurrente-cobro {
   display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
-  padding: 10px 36px 10px 0; border-top: 1px solid var(--line-hi); cursor: pointer; /* 36px = columna de la flecha: montos alineados */
+  padding: 10px 0; border-top: 1px solid var(--line-hi); cursor: pointer;
 }
 .recurrente-cobros .recurrente-cobro:last-child { padding-bottom: 12px; }
 .recurrente-cobro input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
@@ -8350,7 +8352,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '357';
+  const LEDGER_BUILD = '358';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12117,10 +12119,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <input type="checkbox" data-recurrente="${i}" checked onchange="cambioFilaRecurrente(${i})">
         <span class="recurrente-info">
           <span class="recurrente-nombre">${escapeHtml(it.detalle)}</span>
-          <span class="recurrente-meta">${it.categoria ? escapeHtml(it.categoria) + ' · ' : ''}${it.ciclos} de ${it.de} ciclos${it.cobros > 1 ? ` · ${it.cobros} cobros` : ''}${it.nombres > 1 ? ` · ${it.nombres} nombres` : ''}</span>
+          <span class="recurrente-meta">${it.categoria ? escapeHtml(it.categoria) + ' · ' : ''}${it.ciclos} de ${it.de} ciclos${it.cobrosDetalle.length > 1
+            ? ` · <button type="button" class="recurrente-ver-cobros" id="recFlecha-${i}" onclick="event.preventDefault(); event.stopPropagation(); toggleCobrosRecurrente(${i})">${it.cobros} cobros<span class="recurrente-chev">›</span></button>`
+            : (it.cobros > 1 ? ` · ${it.cobros} cobros` : '')}${it.nombres > 1 ? ` · ${it.nombres} nombres` : ''}</span>
         </span>
         <span class="recurrente-monto" id="recMonto-${i}">S/${fmt(it.monto)}</span>
-        ${it.cobrosDetalle.length > 1 ? `<button type="button" class="recurrente-flecha" id="recFlecha-${i}" aria-label="Ver cobros" onclick="event.preventDefault(); event.stopPropagation(); toggleCobrosRecurrente(${i})">›</button>` : ''}
       </label>
       ${it.cobrosDetalle.length > 1 ? `<div class="recurrente-cobros" id="recCobros-${i}" hidden>
         ${it.cobrosDetalle.map((c, j) => `<label class="recurrente-cobro">

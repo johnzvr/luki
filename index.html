@@ -8290,7 +8290,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '340';
+  const LEDGER_BUILD = '341';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11873,14 +11873,17 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       && similitudDetalles(claveDetalleAprendizaje(m.detalle), clave) >= UMBRAL_SUGERENCIA);
 
     const lista = grupos.map(g => {
-      if (g.porCiclo.size < RECURRENTES_MIN_CICLOS) return null;
+      const todos = [...g.porCiclo.values()].flat();
+      // BUILD341 · lo marcado como Suscripciones se sugiere siempre (aunque aparezca en un solo ciclo
+      // o haya cambiado de precio); el resto necesita repetirse con monto estable.
+      const esSuscripcion = todos.some(m => normalizarCategoriaMovimiento(m.categoria) === 'Suscripciones');
+      if (!esSuscripcion && g.porCiclo.size < RECURRENTES_MIN_CICLOS) return null;
       if ([...g.porCiclo.values()].some(movs => movs.length > RECURRENTES_MAX_COBROS)) return null;
       const ordenes = [...g.porCiclo.keys()].sort((a, b) => a - b);
       const ultimos = g.porCiclo.get(ordenes[ordenes.length - 1]);
       const ultimo = ultimos[ultimos.length - 1];
       const referencia = Number(ultimo.monto) || 0;
-      const todos = [...g.porCiclo.values()].flat();
-      if (!todos.every(m => Math.abs((Number(m.monto) || 0) - referencia) <= referencia * RECURRENTES_TOLERANCIA + 0.01)) return null;
+      if (!esSuscripcion && !todos.every(m => Math.abs((Number(m.monto) || 0) - referencia) <= referencia * RECURRENTES_TOLERANCIA + 0.01)) return null;
       if (enEsteCiclo(g.clave)) return null;
       return {
         clave: g.clave,
@@ -11889,7 +11892,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         cobros: ultimos.length,
         ciclos: g.porCiclo.size,
         de: ciclos.length,
-        categoria: normalizarCategoriaMovimiento(ultimo.categoria) || ''
+        suscripcion: esSuscripcion,
+        categoria: (esSuscripcion ? 'Suscripciones' : normalizarCategoriaMovimiento(ultimo.categoria)) || ''
       };
     }).filter(Boolean).sort((a, b) => b.monto - a.monto);
 
@@ -11911,7 +11915,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
             <span class="bank-pull-option-title">${escapeHtml(it.detalle)}</span>
             <span style="white-space:nowrap;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;">S/ ${fmt(it.monto)}</span>
           </span>
-          <span class="bank-pull-option-range">En ${it.ciclos} de tus últimos ${it.de} ciclos${it.cobros > 1 ? ` · ${it.cobros} cobros el último` : ''}${it.categoria ? ' · ' + escapeHtml(it.categoria) : ''}</span>
+          <span class="bank-pull-option-range">${it.ciclos === 1 ? 'En 1' : 'En ' + it.ciclos} de tus últimos ${it.de} ciclos${it.cobros > 1 ? ` · ${it.cobros} cobros el último` : ''}${it.categoria ? ' · ' + escapeHtml(it.categoria) : ''}</span>
         </span>
       </label>`).join('');
     openModal(`

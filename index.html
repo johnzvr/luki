@@ -6919,6 +6919,13 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 .projected-movements-body {
   display: block;
 }
+/* BUILD339 · gastos que se repiten */
+.recurrentes-btn {
+  width: 100%; margin: 6px 0 4px; padding: 11px 14px; border-radius: 12px;
+  border: 1px dashed var(--line, #d4d4d8); background: transparent; color: var(--ink-mute, #6b6b6b);
+  font: inherit; font-size: 12px; font-weight: 650; letter-spacing: .02em; text-align: left; cursor: pointer;
+}
+.recurrentes-solo { margin: 4px 0 8px; }
 /* BUILD311 · bandeja de correos del banco */
 .bandeja-item { cursor: pointer; }
 .bandeja-item.bandeja-registrado { cursor: default; opacity: .55; }
@@ -8283,7 +8290,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '338';
+  const LEDGER_BUILD = '339';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11819,10 +11826,160 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       .reverse();
   }
 
+  // ============ BUILD339 · GASTOS QUE SE REPITEN ============
+  // Busca en los 3 ciclos archivados más recientes gastos con el mismo detalle (coincidencia difusa,
+  // como la sugerencia de categoría) que aparecen en al menos 2 ciclos, con montos estables
+  // (±15% del último) y como máximo 3 cobros por ciclo. Así quedan fuera las compras sueltas
+  // frecuentes (Tambo, Rappi) y entran suscripciones, gym, servicios.
+  // Monto sugerido = lo cobrado en el último ciclo en que apareció (uno o varios cobros).
+  // Se excluye lo que ya está en este ciclo (como proyectado o ya pagado).
+  const RECURRENTES_CICLOS = 3;
+  const RECURRENTES_MIN_CICLOS = 2;
+  const RECURRENTES_MAX_COBROS = 3;
+  const RECURRENTES_TOLERANCIA = 0.15;
+  let recurrentesCache = { firma: '', lista: [] };
+
+  function movimientoCuentaParaRecurrente(mov) {
+    if (!mov || mov.etiqueta === 'recalcula' || esMovimientoProyectado(mov) || mov.adelantoOrigenId || mov.planCuotasId) return false;
+    if (!(Number(mov.monto) > 0)) return false;
+    const tipo = normalizarTipoMovimiento(mov.tipo);
+    if (tipo === 'S') return true;
+    return tipo === 'DS' && !mov.cubierto; // DS normal o DS+P; sin DS+C ni A
+  }
+
+  function gastosRecurrentes() {
+    const ciclos = getArchivedCycles().filter(c => Array.isArray(c?.movimientos) && c.movimientos.length).slice(0, RECURRENTES_CICLOS);
+    const log = Array.isArray(state.log) ? state.log : [];
+    const firma = ciclos.map(c => (c.id || c.fechaInicio) + ':' + c.movimientos.length).join('|')
+      + '#' + log.map(m => (m?.id || '') + (m?.detalle || '')).join(',');
+    if (recurrentesCache.firma === firma) return recurrentesCache.lista;
+
+    const grupos = [];
+    // ciclos[0] es el más reciente; se recorre del más antiguo al más reciente.
+    ciclos.slice().reverse().forEach((ciclo, orden) => {
+      ciclo.movimientos.forEach(mov => {
+        if (!movimientoCuentaParaRecurrente(mov)) return;
+        const clave = claveDetalleAprendizaje(mov.detalle);
+        if (!clave || clave.length < 3) return;
+        let grupo = grupos.find(g => similitudDetalles(clave, g.clave) >= UMBRAL_SUGERENCIA);
+        if (!grupo) { grupo = { clave, porCiclo: new Map() }; grupos.push(grupo); }
+        if (!grupo.porCiclo.has(orden)) grupo.porCiclo.set(orden, []);
+        grupo.porCiclo.get(orden).push(mov);
+      });
+    });
+
+    const enEsteCiclo = clave => log.some(m => m && m.etiqueta !== 'recalcula'
+      && (esMovimientoProyectado(m) || movimientoCuentaParaRecurrente(m))
+      && similitudDetalles(claveDetalleAprendizaje(m.detalle), clave) >= UMBRAL_SUGERENCIA);
+
+    const lista = grupos.map(g => {
+      if (g.porCiclo.size < RECURRENTES_MIN_CICLOS) return null;
+      if ([...g.porCiclo.values()].some(movs => movs.length > RECURRENTES_MAX_COBROS)) return null;
+      const ordenes = [...g.porCiclo.keys()].sort((a, b) => a - b);
+      const ultimos = g.porCiclo.get(ordenes[ordenes.length - 1]);
+      const ultimo = ultimos[ultimos.length - 1];
+      const referencia = Number(ultimo.monto) || 0;
+      const todos = [...g.porCiclo.values()].flat();
+      if (!todos.every(m => Math.abs((Number(m.monto) || 0) - referencia) <= referencia * RECURRENTES_TOLERANCIA + 0.01)) return null;
+      if (enEsteCiclo(g.clave)) return null;
+      return {
+        clave: g.clave,
+        detalle: String(ultimo.detalle || '').replace(/\s*·\s*USD\s.*$/i, '').trim() || g.clave,
+        monto: redondearDinero(ultimos.reduce((t, m) => t + (Number(m.monto) || 0), 0)),
+        cobros: ultimos.length,
+        ciclos: g.porCiclo.size,
+        de: ciclos.length,
+        categoria: normalizarCategoriaMovimiento(ultimo.categoria) || ''
+      };
+    }).filter(Boolean).sort((a, b) => b.monto - a.monto);
+
+    recurrentesCache = { firma, lista };
+    return lista;
+  }
+
+  function openGastosRecurrentes(desdeApertura = false) {
+    const lista = gastosRecurrentes();
+    if (!lista.length) {
+      if (!desdeApertura) toast('No encontré gastos que se repitan y falten en este ciclo');
+      return false;
+    }
+    const filas = lista.map((it, i) => `
+      <label class="bank-pull-option">
+        <input type="checkbox" data-recurrente="${i}" checked onchange="actualizarTotalRecurrentes()">
+        <span class="bank-pull-option-main">
+          <span class="bank-pull-option-top">
+            <span class="bank-pull-option-title">${escapeHtml(it.detalle)}</span>
+            <span style="white-space:nowrap;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;">S/ ${fmt(it.monto)}</span>
+          </span>
+          <span class="bank-pull-option-range">En ${it.ciclos} de tus últimos ${it.de} ciclos${it.cobros > 1 ? ` · ${it.cobros} cobros el último` : ''}${it.categoria ? ' · ' + escapeHtml(it.categoria) : ''}</span>
+        </span>
+      </label>`).join('');
+    openModal(`
+      <h2>Gastos que <span class="accent">se repiten</span></h2>
+      <p class="modal-sub">Aparecieron en ciclos anteriores y todavía no están en este. Los que marques se reservan como <b>proyectados</b> (repartidos entre los bloques); cuando llegue el cobro, lo realizas.</p>
+      <div class="bank-pull-list">${filas}</div>
+      <div class="bank-pull-total-note">
+        <div class="bank-pull-total-row"><span>Total a reservar</span><strong id="recurrentesTotal">S/ 0.00</strong></div>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn-secondary" onclick="closeModal()">${desdeApertura ? 'Ahora no' : 'Cancelar'}</button>
+        <button class="btn-primary" onclick="reservarGastosRecurrentes()">Reservar</button>
+      </div>
+    `);
+    actualizarTotalRecurrentes();
+    return true;
+  }
+
+  function actualizarTotalRecurrentes() {
+    const lista = gastosRecurrentes();
+    const total = [...document.querySelectorAll('input[data-recurrente]:checked')]
+      .reduce((t, el) => t + (Number(lista[Number(el.dataset.recurrente)]?.monto) || 0), 0);
+    const el = document.getElementById('recurrentesTotal');
+    if (el) el.textContent = `S/ ${fmt(total)}`;
+  }
+
+  function reservarGastosRecurrentes() {
+    const lista = gastosRecurrentes();
+    const elegidos = [...document.querySelectorAll('input[data-recurrente]:checked')]
+      .map(el => lista[Number(el.dataset.recurrente)]).filter(Boolean);
+    if (!elegidos.length) { toast('Marca al menos uno', true); return; }
+    let creados = 0, total = 0;
+    elegidos.forEach(it => {
+      // Mismo registro que un PROY manual: reserva repartida entre los bloques restantes.
+      const ok = aplicarMovimiento(it.monto, 'DS', null, it.detalle, {
+        fecha: new Date(),
+        renderizar: false,
+        notificar: false,
+        metadata: { proyectado: true, categoria: it.categoria, monedaOriginal: 'PEN', montoOriginal: it.monto, recurrente: true }
+      });
+      if (ok) { creados++; total += it.monto; }
+    });
+    closeModal();
+    projectedMenuOpen = true;
+    render();
+    toast(`${creados} proyectado${creados === 1 ? '' : 's'} · S/ ${fmt(total)} reservados`);
+  }
+
+  function botonRecurrentesHtml() {
+    const n = gastosRecurrentes().length;
+    if (!n) return '';
+    return `<button type="button" class="recurrentes-btn" onclick="openGastosRecurrentes()">↻ Gastos que se repiten · ${n}</button>`;
+  }
+
   function appendProjectedMovementsSummary(root) {
     if (!root || movementBankFilter !== 'all') return 0;
     const proyectados = movimientosProyectadosActuales();
-    if (!proyectados.length) return 0;
+    if (!proyectados.length) {
+      // BUILD339 · sin proyectados, el acceso a "Gastos que se repiten" queda como una fila sola.
+      const btn = botonRecurrentesHtml();
+      if (btn) {
+        const wrap = document.createElement('div');
+        wrap.className = 'recurrentes-solo';
+        wrap.innerHTML = btn;
+        root.appendChild(wrap);
+      }
+      return 0;
+    }
     const total = redondearDinero(proyectados.reduce((sum, item) => sum + (Number(item.mov?.monto) || 0), 0));
 
     const menu = document.createElement('details');
@@ -11863,6 +12020,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>`;
       body.appendChild(row);
     });
+
+    const btnRec = botonRecurrentesHtml(); // BUILD339
+    if (btnRec) {
+      const wrap = document.createElement('div');
+      wrap.className = 'recurrentes-in-menu';
+      wrap.innerHTML = btnRec;
+      body.appendChild(wrap);
+    }
 
     menu.appendChild(body);
     root.appendChild(menu);
@@ -16479,6 +16644,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       setTimeout(() => toast(`Adelantos por asignar · S/ ${fmt(totalAd)} · en Movimientos`), 2600); // BUILD336
     }
     render();
+    // BUILD339 · al abrir, sugerir los gastos que se repiten (si hay).
+    setTimeout(() => { try { openGastosRecurrentes(true); } catch (e) { console.warn('[Luki] Recurrentes:', e); } }, 700);
   }
   
   // ============ REPORTES EXCEL Y CSV ============
@@ -19872,6 +20039,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       } : {}),
       ...(normalizarCategoriaMovimiento(metadata.categoria) ? { categoria: normalizarCategoriaMovimiento(metadata.categoria) } : {}),
       ...(tipo === 'DS' && metadata.proyectado ? { proyectado: true } : {}),
+      ...(tipo === 'DS' && metadata.proyectado && metadata.recurrente ? { recurrente: true } : {}), // BUILD339
       ...(esMovimientoTarjeta(tipo) && !(tipo === 'DS' && metadata.proyectado) ? { tarjetaId: normalizarTarjetaId(metadata.tarjetaId) } : {}),
       ...(metadata.monedaOriginal ? { monedaOriginal: String(metadata.monedaOriginal).toUpperCase() === 'USD' ? 'USD' : 'PEN' } : {}),
       ...(Number.isFinite(Number(metadata.montoOriginal)) ? { montoOriginal: redondearDinero(Number(metadata.montoOriginal)) } : {}),
@@ -20021,6 +20189,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         ? { categoria: normalizarCategoriaMovimiento(metadata.categoria) }
         : {}),
       ...(tipo === 'DS' && metadata.proyectado ? { proyectado: true } : {}),
+      ...(tipo === 'DS' && metadata.proyectado && metadata.recurrente ? { recurrente: true } : {}), // BUILD339
       ...(esMovimientoTarjeta(tipo) && !(tipo === 'DS' && metadata.proyectado)
         ? { tarjetaId: normalizarTarjetaId(metadata.tarjetaId) }
         : {}),

@@ -8290,7 +8290,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '339';
+  const LEDGER_BUILD = '340';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -18768,6 +18768,93 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     };
   }
 
+  // ============ BUILD340 · CORREO ↔ PROYECTADO ============
+  // Un proyectado pendiente que se parece al correo (mismo detalle aproximado o mismo monto).
+  // Registrar el correo como gasto nuevo descontaría dos veces (la reserva + el gasto);
+  // "Realizar" reemplaza la reserva por el cobro real, como Realizar proyectado.
+  function proyectadosParecidosBandeja(item) {
+    const clave = claveDetalleAprendizaje(detalleBandeja(item).replace(/^(Plin|Yape) · /, ''));
+    const montoPen = item.moneda === 'USD' ? null : Number(item.monto);
+    return movimientosProyectadosActuales()
+      .map(({ mov, index }) => {
+        const sim = clave ? similitudDetalles(clave, claveDetalleAprendizaje(mov.detalle)) : 0;
+        const mismoMonto = montoPen !== null && Math.abs((Number(mov.monto) || 0) - montoPen) <= 0.011;
+        return (sim >= UMBRAL_SUGERENCIA || mismoMonto) ? { mov, index, sim } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.sim - a.sim)
+      .slice(0, 3);
+  }
+
+  function realizarProyectadoDesdeBandeja(id, movId) {
+    const item = bandejaItemPorId(id);
+    if (!item) { closeModal(); return; }
+    if (!estadoBandeja().pendientes.some(it => it.id === id)) { closeModal(); toast('Ese consumo ya está registrado'); renderLog(); return; }
+    const idx = (Array.isArray(state.log) ? state.log : []).findIndex(m => String(m?.id) === String(movId));
+    const proy = idx >= 0 ? state.log[idx] : null;
+    if (!proy || !esMovimientoProyectado(proy) || !proy.snapshot) { toast('No se encontró el proyectado', true); return; }
+    const eleccion = document.querySelector('input[name="bandejaTipo"]:checked')?.value || tipoSugeridoBandeja(item);
+    if (eleccion !== 'S' && eleccion !== 'DS') { toast('Para realizar un proyectado elige S o DS', true); return; }
+    let detalle = (document.getElementById('bandejaDetalle')?.value || '').trim() || proy.detalle || detalleBandeja(item);
+    const categoria = normalizarCategoriaMovimiento(document.getElementById('bandejaCategoria')?.value) || normalizarCategoriaMovimiento(proy.categoria);
+    const tarjetaId = normalizarTarjetaId(document.getElementById('bandejaTarjeta')?.value || tarjetaBandeja(item));
+    const esUsd = item.moneda === 'USD';
+    let monto = Number(item.monto);
+    let tipoCambio = null;
+    if (esUsd) {
+      const rate = getExchangeRate();
+      if (!rate) { toast('Sin tipo de cambio · toca US$ en el registro y espera', true); return; }
+      monto = redondearDinero(Number(item.monto) * rate);
+      tipoCambio = rate;
+      detalle = `${detalle} · USD ${Number(item.monto).toFixed(2)} @ ${rate.toFixed(3)}`;
+    }
+    const estadoAntes = captureMovementState();
+    const logAntes = JSON.parse(JSON.stringify(state.log));
+    const redoAntes = state.redoMovement ? JSON.parse(JSON.stringify(state.redoMovement)) : null;
+    try {
+      // Igual que Realizar proyectado: se quita la reserva y se registra el cobro real hoy.
+      const reconstruido = reconstruirSinMovimiento(idx);
+      restoreMovementState(reconstruido.rebuiltState);
+      state.log = reconstruido.rebuiltLog;
+      state.redoMovement = null;
+      bandejaRegistroEnCurso = { id: item.id, monto, desde: Date.now() }; // vincula el correo
+      const ok = aplicarMovimiento(monto, eleccion, null, detalle, {
+        fecha: new Date(),
+        renderizar: false,
+        notificar: false,
+        metadata: {
+          categoria,
+          tarjetaId,
+          monedaOriginal: esUsd ? 'USD' : 'PEN',
+          montoOriginal: Number(item.monto),
+          ...(esUsd ? { tipoCambio } : {})
+        }
+      });
+      if (!ok) throw new Error('No se pudo registrar el cobro');
+      const movimientoFinal = state.log[state.log.length - 1];
+      lastProjectedRealizationUndo = {
+        finalMovementId: movimientoFinal?.id || null,
+        beforeState: JSON.parse(JSON.stringify(estadoAntes)),
+        beforeLog: JSON.stringify(logAntes),
+        afterState: JSON.parse(JSON.stringify(captureMovementState())),
+        afterLog: JSON.stringify(state.log)
+      };
+      closeModal();
+      const diferencia = redondearDinero(monto - (Number(proy.monto) || 0));
+      toast(`Proyectado realizado · ${eleccion} S/ ${fmt(monto)}${Math.abs(diferencia) >= 0.005 ? ` (${diferencia > 0 ? '+' : '−'}S/ ${fmt(Math.abs(diferencia))})` : ''}`);
+      render();
+    } catch (e) {
+      console.error('[Luki] Realizar desde bandeja:', e);
+      bandejaRegistroEnCurso = null;
+      restoreMovementState(estadoAntes);
+      state.log = logAntes;
+      state.redoMovement = redoAntes;
+      closeModal();
+      toast('No se pudo realizar este proyectado', true);
+      render({ markModified: false, sync: false });
+    }
+  }
+
   // BUILD333 · movimientos que se parecen al correo (misma tarjeta/tipo, monto, ±3 días) y que no
   // están vinculados a otro correo. Solo se sugieren: el usuario decide si es el mismo.
   function movimientosParecidosBandeja(item) {
@@ -19023,6 +19110,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     try { sugerencia = sugerenciaMovimiento(detalle); } catch (e) {}
     let parecidos = [];
     try { parecidos = movimientosParecidosBandeja(item); } catch (e) {} // BUILD333
+    let proyParecidos = [];
+    try { proyParecidos = proyectadosParecidosBandeja(item); } catch (e) {} // BUILD340
     const rate = getExchangeRate();
     const conversion = item.moneda === 'USD'
       ? (rate ? ` ≈ S/ ${fmt(Number(item.monto) * rate)} @ ${rate.toFixed(3)}` : ' · sin tipo de cambio')
@@ -19046,6 +19135,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <button type="button" class="btn-secondary" data-id="${escapeHtml(item.id)}" data-mov="${escapeHtml(String(m.id ?? m.timestamp))}" onclick="vincularBandejaItem(this.dataset.id, this.dataset.mov)">Es este</button>
         </div>`).join('')}
         <div class="bandeja-parecido-note">"Es este" lo vincula sin registrarlo otra vez. Si es otra compra, usa Registrar.</div>
+      </div>` : ''}
+      ${proyParecidos.length ? `<div class="bandeja-parecido">
+        <div class="bandeja-parecido-title">¿Es un proyectado?</div>
+        ${proyParecidos.map(({ mov }) => `<div class="bandeja-parecido-row">
+          <span><b>${escapeHtml(mov.detalle || 'Proyectado')}</b><br>Reservado · S/ ${fmt(Number(mov.monto) || 0)}</span>
+          <button type="button" class="btn-secondary" data-id="${escapeHtml(item.id)}" data-mov="${escapeHtml(String(mov.id))}" onclick="realizarProyectadoDesdeBandeja(this.dataset.id, this.dataset.mov)">Realizar</button>
+        </div>`).join('')}
+        <div class="bandeja-parecido-note">"Realizar" cambia la reserva por este cobro: solo impacta la diferencia. Usa el tipo, detalle, categoría y tarjeta de abajo.</div>
       </div>` : ''}
       <div class="modal-field">
         <label>Tipo</label>

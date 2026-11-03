@@ -8283,7 +8283,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '334';
+  const LEDGER_BUILD = '335';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -15412,7 +15412,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
       <div class="modal-field">
         <label>Meta de ahorro</label>
-        <input type="number" step="0.01" id="newMeta" value="${(state.metaResidual || 0).toFixed(2)}" oninput="previewNuevoCiclo()">
+        <!-- BUILD335 · La Meta empieza en 0 en cada ciclo nuevo (antes se precargaba la del ciclo anterior) -->
+        <input type="number" step="0.01" id="newMeta" value="0.00" oninput="previewNuevoCiclo()">
       </div>
       <div class="new-cycle-bank-pull">
         <div class="new-cycle-bank-pull-head">

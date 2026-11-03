@@ -8352,7 +8352,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '358';
+  const LEDGER_BUILD = '359';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12119,9 +12119,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <input type="checkbox" data-recurrente="${i}" checked onchange="cambioFilaRecurrente(${i})">
         <span class="recurrente-info">
           <span class="recurrente-nombre">${escapeHtml(it.detalle)}</span>
-          <span class="recurrente-meta">${it.categoria ? escapeHtml(it.categoria) + ' · ' : ''}${it.ciclos} de ${it.de} ciclos${it.cobrosDetalle.length > 1
-            ? ` · <button type="button" class="recurrente-ver-cobros" id="recFlecha-${i}" onclick="event.preventDefault(); event.stopPropagation(); toggleCobrosRecurrente(${i})">${it.cobros} cobros<span class="recurrente-chev">›</span></button>`
-            : (it.cobros > 1 ? ` · ${it.cobros} cobros` : '')}${it.nombres > 1 ? ` · ${it.nombres} nombres` : ''}</span>
+          ${it.cobrosDetalle.length > 1 ? `<span class="recurrente-meta"><button type="button" class="recurrente-ver-cobros" id="recFlecha-${i}" onclick="event.preventDefault(); event.stopPropagation(); toggleCobrosRecurrente(${i})">${it.cobros} cobros<span class="recurrente-chev">›</span></button></span>` : ''}
         </span>
         <span class="recurrente-monto" id="recMonto-${i}">S/${fmt(it.monto)}</span>
       </label>

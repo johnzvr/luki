@@ -6926,6 +6926,9 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
   font: inherit; font-size: 12px; font-weight: 650; letter-spacing: .02em; text-align: left; cursor: pointer;
 }
 .recurrentes-solo { margin: 4px 0 8px; }
+/* BUILD346 · marcar / desmarcar todos */
+.recurrentes-marcar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.recurrentes-marcar .btn-secondary { font-size: 12px; padding: 10px 8px; }
 /* BUILD345 · recurrentes ocultos */
 .recurrentes-ocultos-link { margin: 12px 0 6px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 650; color: var(--ink-mute, #6b6b6b); text-decoration: underline; cursor: pointer; }
 .recurrentes-oculto-row { padding: 6px 0; }
@@ -8293,7 +8296,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '345';
+  const LEDGER_BUILD = '346';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11990,6 +11993,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       <div class="bank-pull-list">${filas}</div>
       <div class="bank-pull-total-note">
         <div class="bank-pull-total-row"><span>Total a reservar</span><strong id="recurrentesTotal">S/ 0.00</strong></div>
+      </div>
+      <div class="recurrentes-marcar">
+        <button type="button" class="btn-secondary" onclick="marcarTodosRecurrentes(false)">Desmarcar todos</button>
+        <button type="button" class="btn-secondary" onclick="marcarTodosRecurrentes(true)">Marcar todos</button>
       </div>` : `<p class="modal-sub">No hay recurrentes pendientes en este ciclo.</p>`}
       ${ocultosHtml}
       <div class="modal-buttons">
@@ -11999,6 +12006,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     `);
     actualizarTotalRecurrentes();
     return true;
+  }
+
+  // BUILD346 · marcar o desmarcar toda la lista de una vez.
+  function marcarTodosRecurrentes(marcar) {
+    document.querySelectorAll('input[data-recurrente]').forEach(el => { el.checked = !!marcar; });
+    actualizarTotalRecurrentes();
   }
 
   function actualizarTotalRecurrentes() {

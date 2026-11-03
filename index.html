@@ -6963,6 +6963,7 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 body.dark .recurrente-item.con-cobros { background: rgba(255,255,255,0.045); }
 .recurrente-item.con-cobros > .recurrente-row { background: transparent; border: 0; border-radius: 0; }
 .recurrente-cobros { margin: 0 16px 0 45px; display: grid; }
+.recurrente-cobros[hidden] { display: none; } /* BUILD357 · sin esto, display:grid ganaba a hidden y el desglose nunca se plegaba */
 .recurrente-cobro {
   display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
   padding: 10px 36px 10px 0; border-top: 1px solid var(--line-hi); cursor: pointer; /* 36px = columna de la flecha: montos alineados */
@@ -8349,7 +8350,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '356';
+  const LEDGER_BUILD = '357';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {

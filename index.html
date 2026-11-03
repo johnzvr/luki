@@ -8363,7 +8363,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '361';
+  const LEDGER_BUILD = '362';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -8458,6 +8458,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   // Se reconstruye una sola vez con el saldo actual + los gastos S/DS del log vigente.
   asegurarSaldoInicialCiclo(state);
   asegurarRitmoDiarioBloques(state);
+  try { migrarAdelantosAsignados(state); } catch (e) { console.warn('[Luki] Migración adelantos:', e); } // BUILD362
   ensureSyncMetadata(state);
   let lastPersistedSyncFingerprint = syncRelevantFingerprint(state);
   // BUILD291 · abrir/renderizar Luki no es una edición del usuario.
@@ -10265,6 +10266,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   
   function render({ markModified = true, sync = true } = {}) {
     asegurarModeloMultiTarjeta();
+    try { migrarAdelantosAsignados(state); } catch (e) {} // BUILD362 · también tras bajar de Drive
     asegurarRitmoDiarioBloques(state);
     if (!Array.isArray(state.historialCiclos)) state.historialCiclos = [];
     if (state.historialCiclos.length > 24) state.historialCiclos = state.historialCiclos.slice(0, 24);
@@ -10829,6 +10831,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const vistos = new Set();
     const agregar = (mov, origen, index, fechaInicioReferencia) => {
       if (!mov || mov.etiqueta === 'recalcula' || !esMovimientoTarjeta(mov)) return;
+      if (mov.adelantoOrigenId) return; // BUILD362 · la compra original (A) ya está en su ciclo bancario
       if (filtroTarjeta && tarjetaIdMovimiento(mov) !== filtroTarjeta) return;
       const clave = claveMovimientoTarjeta(mov, origen);
       if (vistos.has(clave)) return;
@@ -13021,7 +13024,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ? state.log.filter(mov => mov && mov.etiqueta !== 'recalcula')
       : [];
     const totalDS = redondearDinero(movimientos
-      .filter(mov => mov.tipo === 'DS' && !esMovimientoProyectado(mov))
+      .filter(mov => mov.tipo === 'DS' && !esMovimientoProyectado(mov) && !mov.adelantoOrigenId) // BUILD362
       .reduce((total, mov) => total + (Number(mov.monto) || 0), 0));
     const totalFDS = redondearDinero(movimientos
       .filter(mov => normalizarTipoMovimiento(mov.tipo) === 'FDS')
@@ -13041,6 +13044,37 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ),
       cantidad: movimientos.filter(mov => !esMovimientoProyectado(mov) && (afectaPresupuestoSalarial(mov) || esMovimientoTarjeta(mov))).length
     };
+  }
+
+  // BUILD362 · adelantos asignados antes de esta versión quedaron como S (o los pasaste a DS a mano,
+  // sumando deuda de nuevo). Se convierten a DS sin deuda nueva y se corrigen los totales y las fotos
+  // (snapshots) de los movimientos posteriores para que Deshacer/Editar no reviertan la corrección.
+  function migrarAdelantosAsignados(target) {
+    const log = Array.isArray(target?.log) ? target.log : [];
+    log.forEach((mov, idx) => {
+      if (!mov?.adelantoOrigenId || mov.adelantoMigrado362) return;
+      const monto = Number(mov.monto) || 0;
+      const tipo = normalizarTipoMovimiento(mov.tipo);
+      const ajustar = (campo, delta) => {
+        target[campo] = redondearDinero((Number(target[campo]) || 0) + delta);
+        for (let j = idx + 1; j < log.length; j++) {
+          const snap = log[j]?.snapshot;
+          if (snap && Number.isFinite(Number(snap[campo]))) snap[campo] = redondearDinero(Number(snap[campo]) + delta);
+        }
+      };
+      if (tipo === 'S') {
+        ajustar('gastoNoAdeudado', -monto);
+      } else if (tipo === 'DS' && !mov.cubierto) {
+        ajustar('deudaActual', -monto); // se había sumado al pasarlo a DS a mano
+      } else {
+        mov.adelantoMigrado362 = true;
+        return;
+      }
+      mov.tipo = 'DS';
+      const origen = (Array.isArray(target.adelantosPorAsignar) ? target.adelantosPorAsignar : []).find(it => it.id === mov.adelantoOrigenId);
+      mov.tarjetaId = normalizarTarjetaId(mov.tarjetaId || origen?.tarjetaId || 'interbank');
+      mov.adelantoMigrado362 = true;
+    });
   }
 
   function deudaBaseCicloActual() {
@@ -13403,7 +13437,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     next.totalDisponible -= impactoPresupuesto;
     next.gastoTotal += monto;
     if (tipo === 'S') next.gastoNoAdeudado += monto;
-    if (tipo === 'DS') next.deudaActual += monto;
+    if (tipo === 'DS' && !mov.adelantoOrigenId) next.deudaActual += monto; // BUILD362
 
     const fechaMovimiento = mov.fechaISO
       ? new Date(mov.fechaISO)
@@ -14211,7 +14245,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <label>Tipo</label>
         <div class="edit-type-grid">
           <label class="edit-type-option">
-            <input type="radio" name="editMovementType" value="S" ${mov.tipo === 'S' ? 'checked' : ''} ${esCuotaPropia ? 'disabled' : ''}>
+            <input type="radio" name="editMovementType" value="S" ${mov.tipo === 'S' ? 'checked' : ''} ${esCuotaPropia || mov.adelantoOrigenId ? 'disabled' : ''}>
             <span>S · Contado</span>
           </label>
           <label class="edit-type-option">
@@ -14219,11 +14253,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
             <span>${esMovimientoAdelanto(mov) ? 'A · Adelanto' : esMovimientoDSCubierto(mov) ? 'DS+C · Tarjeta cubierta' : (esMovimientoDSPropio(mov) ? 'DS+P · 2 cuotas propias' : 'DS · Tarjeta')}</span>
           </label>
           <label class="edit-type-option">
-            <input type="radio" name="editMovementType" value="F" ${mov.tipo === 'F' ? 'checked' : ''} ${esCuotaPropia ? 'disabled' : ''}>
+            <input type="radio" name="editMovementType" value="F" ${mov.tipo === 'F' ? 'checked' : ''} ${esCuotaPropia || mov.adelantoOrigenId ? 'disabled' : ''}>
             <span>F · Fondo</span>
           </label>
           <label class="edit-type-option fds">
-            <input type="radio" name="editMovementType" value="FDS" ${normalizarTipoMovimiento(mov.tipo) === 'FDS' ? 'checked' : ''} ${esCuotaPropia ? 'disabled' : ''}>
+            <input type="radio" name="editMovementType" value="FDS" ${normalizarTipoMovimiento(mov.tipo) === 'FDS' ? 'checked' : ''} ${esCuotaPropia || mov.adelantoOrigenId ? 'disabled' : ''}>
             <span>F+DS · Fondo/tarjeta</span>
           </label>
         </div>
@@ -14398,6 +14432,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const etiqueta = !editCubierto && afectaPresupuestoSalarial(tipo) && document.getElementById('editMovementSem')?.checked ? 'sem' : null;
     if (!Number.isFinite(monto) || monto <= 0 || !['S', 'DS', 'F', 'FDS'].includes(tipo)) {
       toast('Revisa el monto y el tipo', true);
+      return;
+    }
+    if (state.log[idx]?.adelantoOrigenId && tipo !== 'DS') { // BUILD362 · adelanto asignado: siempre DS sin deuda nueva
+      toast('Un adelanto asignado siempre es DS: su deuda ya está contada', true);
       return;
     }
     // BUILD361 · casilla Recurrente: se guarda por nombre, no cambia el movimiento ni ningún monto.
@@ -16826,6 +16864,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       tarjetaId: esMovimientoTarjeta(mov) ? tarjetaIdMovimiento(mov) : null,
       cubierto: esMovimientoDSCubierto(mov),
       adelanto: esMovimientoAdelanto(mov), // BUILD330
+      adelantoOrigenId: mov.adelantoOrigenId || null, // BUILD362
       fecha: mov.fecha || '',
       fechaISO: mov.fechaISO || null,
       timestamp: Number(mov.timestamp) || null,
@@ -16942,6 +16981,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         tarjetaId: esMovimientoTarjeta(m) ? tarjetaIdMovimiento(m) : null,
         cubierto: esMovimientoDSCubierto(m),
         adelanto: esMovimientoAdelanto(m), // BUILD330
+        adelantoOrigenId: m.adelantoOrigenId || null, // BUILD362
         fecha: m.fecha || '',
         fechaISO: m.fechaISO || null,
         timestamp: Number(m.timestamp) || null,
@@ -17172,7 +17212,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     resumen.gastoDisponible = redondearDinero(reales
       .filter(mov => afectaPresupuestoSalarial(mov) && !esMovimientoDSCubierto(mov))
       .reduce((total, mov) => total + impactoPresupuestoMovimiento(mov), 0));
-    resumen.deudaGenerada = resumen.DS + resumen.FDS;
+    // BUILD362 · un adelanto asignado es DS pero no deuda nueva (la compra original ya la generó).
+    const dsAdelantoAsignado = reales.filter(mov => mov?.adelantoOrigenId && normalizarTipoMovimiento(mov?.tipo) === 'DS')
+      .reduce((t, mov) => t + (Number(mov?.monto) || 0), 0);
+    resumen.deudaGenerada = resumen.DS + resumen.FDS - dsAdelantoAsignado;
     resumen.fondoUtilizado = resumen.F + resumen.FDS;
     return resumen;
   }
@@ -19387,7 +19430,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (Date.now() - p.desde > 15 * 60000) { adelantoAsignacionEnCurso = null; return {}; }
     if (Math.abs((Number(monto) || 0) - p.monto) > 0.011) return {};
     adelantoAsignacionEnCurso = null;
-    return { adelantoOrigenId: p.id };
+    return { adelantoOrigenId: p.id, adelantoMigrado362: true };
   }
 
   function appendAdelantosSummary(root) {
@@ -19460,10 +19503,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const modo = document.querySelector('input[name="adelantoBloques"]:checked')?.value || 'actual';
     const detalle = (document.getElementById('adelantoDetalle')?.value || '').trim() || item.detalle;
     const categoria = normalizarCategoriaMovimiento(document.getElementById('adelantoCategoria')?.value);
-    // S: resta Disponible y bloques, sin sumar deuda (ya está en la deuda inicial).
+    // BUILD362 · DS real (se pagó con la tarjeta), pero SIN deuda nueva: la compra original (A) ya está
+    // en la deuda inicial y en el heads-up. Resta Disponible y bloques una sola vez.
     const datosRegistro = {
       monto: item.monto,
-      tipo: 'S',
+      tipo: 'DS',
       etiqueta: modo === 'sem' ? 'sem' : null,
       detalle,
       categoria,
@@ -20780,7 +20824,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     state.totalDisponible -= impactoPresupuesto;
     state.gastoTotal += monto;
     if (tipo === 'S') state.gastoNoAdeudado += monto;
-    if (tipo === 'DS') state.deudaActual += monto;
+    if (tipo === 'DS' && !mov.adelantoOrigenId) state.deudaActual += monto; // BUILD362 · adelanto asignado: deuda ya contada
 
     const resultadoBloques = opciones.soloBloqueActual
       ? aplicarGastoSoloBloqueActual(state.semanas, impactoPresupuesto, ahora)

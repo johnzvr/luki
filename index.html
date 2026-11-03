@@ -8352,7 +8352,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '359';
+  const LEDGER_BUILD = '360';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -12005,7 +12005,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         const maxCobros = estricto ? 1 : RECURRENTES_MAX_COBROS;
         if ([...g.porCiclo.values()].some(movs => movs.length > maxCobros)) return null;
         const tolerancia = estricto ? RECURRENTES_TOLERANCIA_ESTRICTA : RECURRENTES_TOLERANCIA;
-        if (!todos.every(m => Math.abs((Number(m.monto) || 0) - referencia) <= referencia * tolerancia + 0.01)) return null;
+        // BUILD360 · basta con que ALGÚN cobro del último ciclo se repita (±tolerancia) en otro ciclo.
+        // Antes se exigía que todos los montos se parecieran entre sí: un gym con dos cobros distintos
+        // (S/85.15 + S/9.90) nunca entraba. El desglose preselecciona los que se repiten.
+        const previos = ordenes.slice(0, -1).flatMap(o => g.porCiclo.get(o).map(m => Number(m.monto) || 0));
+        const seRepite = ultimos.some(m => {
+          const v = Number(m.monto) || 0;
+          return previos.some(p => Math.abs(p - v) <= Math.max(p, v) * tolerancia + 0.01);
+        });
+        if (!seRepite) return null;
       } else if ([...g.porCiclo.values()].some(movs => movs.length > RECURRENTES_MAX_COBROS)) {
         return null;
       }

@@ -8290,7 +8290,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '342';
+  const LEDGER_BUILD = '343';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16924,7 +16924,16 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   // ============ BUILD310 · CONCILIACIÓN DE TARJETAS EN EL EXCEL ============
   function estadoPagoGrupo(grupo) {
     if (!grupo || grupo.sintetico) return 'Pendiente';
-    return (pagoPendienteParaGrupo(grupo) || cicloTarjetaPagadoParaGrupo(grupo)) ? 'Pagado' : 'Pendiente';
+    if (pagoPendienteParaGrupo(grupo) || cicloTarjetaPagadoParaGrupo(grupo)) return 'Pagado';
+    // BUILD343 · si un estado POSTERIOR del mismo banco ya está pagado o marcado pagado,
+    // este quedó saldado: el banco arrastra cualquier saldo impago al estado siguiente.
+    if (!grupo.cierre) return 'Pendiente';
+    const dia = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : fechaParaInput(v);
+    const cierre = dia(grupo.cierre);
+    const banco = normalizarTarjetaId(grupo.tarjetaId);
+    const posteriorPagado = [...ciclosTarjetaPagados(), ...pagosTarjetaPendientesConciliar()]
+      .some(r => r && normalizarTarjetaId(r.tarjetaId) === banco && r.cierre && dia(r.cierre) > cierre);
+    return posteriorPagado ? 'Pagado' : 'Pendiente';
   }
 
   function etiquetaCicloTarjetaReporte(grupo) {

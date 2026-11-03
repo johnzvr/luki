@@ -6949,7 +6949,8 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
   padding: 2px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line-hi);
   font-size: 10px; font-weight: 650; letter-spacing: .02em; color: var(--ink-dim);
 }
-.recurrente-monto { font-size: 14px; font-weight: 600; color: var(--ink-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* BUILD352 · monto igual que en Movimientos: Space Mono 18px bold, en negro */
+.recurrente-monto { font-family: var(--font-mono, "Space Mono", ui-monospace, monospace); font-size: 18px; font-weight: 700; letter-spacing: -0.045em; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* BUILD348 · pie fijo del modal de recurrentes */
 .recurrentes-footer {
   position: sticky; bottom: -24px; z-index: 2;
@@ -8326,7 +8327,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '351';
+  const LEDGER_BUILD = '352';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {

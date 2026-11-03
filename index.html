@@ -6934,6 +6934,15 @@ body.dark #modalContent:has(.all-list) .all-sum-item {
 .bandeja-parecido-row .btn-secondary {
   border-radius: 14px; font-family: inherit; font-weight: 600; cursor: pointer; min-height: 40px;
 }
+/* BUILD348 · pie fijo del modal de recurrentes */
+.recurrentes-footer {
+  position: sticky; bottom: -24px; z-index: 2;
+  margin: 14px -24px -24px; padding: 12px 24px 24px;
+  background: var(--bg);
+  box-shadow: 0 -10px 18px -10px rgba(0,0,0,.18);
+}
+.recurrentes-footer .bank-pull-total-note { margin-top: 0; }
+.recurrentes-footer .modal-buttons { margin-top: 10px; }
 /* BUILD345 · recurrentes ocultos */
 .recurrentes-ocultos-link { margin: 12px 0 6px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 650; color: var(--ink-mute, #6b6b6b); text-decoration: underline; cursor: pointer; }
 .recurrentes-oculto-row { padding: 6px 0; }
@@ -8301,7 +8310,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '347';
+  const LEDGER_BUILD = '348';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11995,18 +12004,21 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     openModal(`
       <h2>Gastos <span class="accent">recurrentes</span></h2>
       ${lista.length ? `<p class="modal-sub">Aparecieron en ciclos anteriores y todavía no están en este. Los que marques se reservan como <b>proyectados</b> (repartidos entre los bloques); cuando llegue el cobro, lo realizas. Los que desmarques no se vuelven a sugerir.</p>
-      <div class="bank-pull-list">${filas}</div>
-      <div class="bank-pull-total-note">
-        <div class="bank-pull-total-row"><span>Total a reservar</span><strong id="recurrentesTotal">S/ 0.00</strong></div>
-      </div>
-      <div class="recurrentes-marcar">
-        <button type="button" class="btn-secondary" onclick="marcarTodosRecurrentes(false)">Desmarcar todos</button>
-        <button type="button" class="btn-secondary" onclick="marcarTodosRecurrentes(true)">Marcar todos</button>
-      </div>` : `<p class="modal-sub">No hay recurrentes pendientes en este ciclo.</p>`}
+      <div class="bank-pull-list">${filas}</div>` : `<p class="modal-sub">No hay recurrentes pendientes en este ciclo.</p>`}
       ${ocultosHtml}
-      <div class="modal-buttons">
-        <button class="btn-secondary" onclick="closeModal()">${desdeApertura ? 'Ahora no' : (lista.length ? 'Cancelar' : 'Cerrar')}</button>
-        ${lista.length ? `<button class="btn-primary" onclick="reservarGastosRecurrentes()">Reservar</button>` : ''}
+      <!-- BUILD348 · total y botones fijos abajo, flotando sobre la lista (como la barra de registro) -->
+      <div class="recurrentes-footer">
+        ${lista.length ? `<div class="bank-pull-total-note">
+          <div class="bank-pull-total-row"><span>Total a reservar</span><strong id="recurrentesTotal">S/ 0.00</strong></div>
+        </div>
+        <div class="recurrentes-marcar">
+          <button type="button" class="btn-secondary" onclick="marcarTodosRecurrentes(false)">Desmarcar todos</button>
+          <button type="button" class="btn-secondary" onclick="marcarTodosRecurrentes(true)">Marcar todos</button>
+        </div>` : ''}
+        <div class="modal-buttons">
+          <button class="btn-secondary" onclick="closeModal()">${desdeApertura ? 'Ahora no' : (lista.length ? 'Cancelar' : 'Cerrar')}</button>
+          ${lista.length ? `<button class="btn-primary" onclick="reservarGastosRecurrentes()">Reservar</button>` : ''}
+        </div>
       </div>
     `);
     actualizarTotalRecurrentes();

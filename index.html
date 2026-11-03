@@ -8283,7 +8283,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '337';
+  const LEDGER_BUILD = '338';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -18631,7 +18631,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function filaBandejaHtml(item, registrado) {
     const tipo = tipoSugeridoBandeja(item);
     const banco = tarjetaBandeja(item);
-    const origen = item.clase === 'plin' ? (item.credito ? 'Plin TC' : 'Plin cuenta') : (item.clase === 'yape' ? 'Yape' : (item.credito ? '' : 'Débito'));
+    const origen = item.clase === 'plin' ? (item.credito ? 'Plin TC' : 'Plin cuenta') : (item.clase === 'yape' ? 'Yape' : (item.clase === 'servicio' ? 'Pago de servicio' : (item.credito ? '' : 'Débito'))); // BUILD338 · pagos de servicios
     return `
       <div class="log-item projected-movement bandeja-item${registrado ? ' bandeja-registrado' : ''}"${registrado ? '' : ` data-id="${escapeHtml(item.id)}" onclick="openBandejaItem(this.dataset.id)"`}>
         <div class="log-left">

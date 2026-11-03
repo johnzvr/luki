@@ -8283,7 +8283,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '335';
+  const LEDGER_BUILD = '336';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11566,6 +11566,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function badgeCuotaMovimiento(mov) {
     if (esMovimientoAdelanto(mov)) return '<span class="badge">Adelanto</span>'; // BUILD330/331 · badge neutro, como SEM
+    if (mov?.adelantoOrigenId) return '<span class="badge">Adelanto</span>'; // BUILD336 · adelanto ya asignado
     const numero = Number(mov?.cuotaNumero);
     const total = Number(mov?.cuotasTotal);
     if (!mov?.planCuotasId || !Number.isFinite(numero) || !Number.isFinite(total)) return '';
@@ -11915,6 +11916,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     try { proyectadosPintados = appendProjectedMovementsSummary(logEl); }
     catch (error) { console.error('[Luki] Proyectados:', error); }
     // BUILD311 · consumos leídos de los correos del banco, por confirmar.
+    try { proyectadosPintados += appendAdelantosSummary(logEl); } // BUILD336
+    catch (error) { console.error('[Luki] Adelantos:', error); }
     try { proyectadosPintados += appendBandejaSummary(logEl); }
     catch (error) { console.error('[Luki] Bandeja:', error); }
 
@@ -12959,6 +12962,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (!mov) return { disponible: 0, fondo: 0, deuda: 0 };
     const monto = redondearDinero(Number(mov.monto) || 0);
     const tipo = normalizarTipoMovimiento(mov.tipo);
+    // BUILD336 · si el ciclo separó los adelantos, el A no se restó al abrir: solo es deuda.
+    if (esMovimientoAdelanto(mov) && Number(state.deudaInicioCiclo?.adelantosSeparados) > 0.005) {
+      return { disponible: 0, fondo: 0, deuda: monto };
+    }
     if (tipo === 'DS') return { disponible: monto, fondo: 0, deuda: monto };
     if (tipo === 'FDS') return { disponible: 0, fondo: monto, deuda: monto };
     return { disponible: 0, fondo: 0, deuda: 0 };
@@ -14770,6 +14777,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
             <div class="snapshot-row start-fund"><span>Fondo reservado</span><strong>− ${money(cuentas.fondo)}</strong></div>
             ${Number(cuentas.cuotasPropiasAplicadas) > .005 ? `<div class="snapshot-row"><span>DS+P pendientes</span><strong>− ${money(cuentas.cuotasPropiasAplicadas)}</strong></div>` : ''}
             <div class="snapshot-row"><span>Deuda reservada</span><strong>− ${money(Number.isFinite(Number(cuentas.deudaPendienteAplicada)) ? cuentas.deudaPendienteAplicada : deudaTotal)}</strong></div>
+            ${Number(cuentas.adelantosSeparados) > .005 ? `<div class="snapshot-row"><span>Adelantos · se asignan como gasto</span><strong>${money(cuentas.adelantosSeparados)}</strong></div>` : ''}
             <div class="snapshot-row emphasis"><span>Disponible inicial</span><strong>${money(cuentas.disponible)}</strong></div>
           </div>
         </div>
@@ -15408,6 +15416,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <span class="rollover-week">Disponible del ciclo</span>
           <span class="rollover-amount" id="newDisponiblePreview">—</span>
         </div>
+        <!-- BUILD336 · adelantos: siguen en la deuda, pero se asignan como gasto en Movimientos -->
+        <div class="rollover-row" id="newAdelantosRow" hidden>
+          <span class="rollover-week">Adelantos por asignar · no se restan aquí</span>
+          <span class="rollover-amount" id="newAdelantosPreview">—</span>
+        </div>
       </div>
 
       <div class="modal-field">
@@ -15557,6 +15570,44 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       dolares: redondearDinero(monedas.dolares),
       totalSolesReferencia: redondearDinero(grupo.total)
     };
+  }
+
+  // BUILD336 · adelantos (A) incluidos en la deuda pendiente del nuevo ciclo.
+  // Siguen siendo deuda de tarjeta, pero NO se restan del Disponible al abrir:
+  // quedan "por asignar" en Movimientos y el usuario decide de qué bloque(s) salen.
+  // Así se descuentan una sola vez, como gasto visible del ciclo nuevo.
+  function adelantosParaNuevoCiclo(grupos, fechaInicioNuevo) {
+    const limite = fechaInicioNuevo instanceof Date && !Number.isNaN(fechaInicioNuevo.getTime()) ? inicioDelDia(fechaInicioNuevo) : null;
+    const vistos = new Set();
+    const items = [];
+    (Array.isArray(grupos) ? grupos : []).forEach(grupo => {
+      (Array.isArray(grupo?.movimientos) ? grupo.movimientos : []).forEach(entrada => {
+        const mov = entrada?.mov;
+        if (!mov || !esMovimientoAdelanto(mov)) return;
+        const ref = mov.id != null ? 'id:' + mov.id : (mov.timestamp != null ? 'ts:' + mov.timestamp : '');
+        if (!ref || vistos.has(ref)) return;
+        const fecha = fechaDeMovimiento(mov, entrada.index, entrada.fechaInicioReferencia);
+        if (limite && fecha instanceof Date && fecha >= limite) return;
+        const monto = redondearDinero(Number(mov.monto) || 0);
+        if (!(monto > 0.005)) return;
+        vistos.add(ref);
+        items.push({
+          id: 'adelanto-' + ref.replace(/[^a-zA-Z0-9_-]/g, ''),
+          origenRef: ref,
+          monto,
+          detalle: mov.detalle || 'Adelanto',
+          categoria: normalizarCategoriaMovimiento(mov.categoria) || '',
+          tarjetaId: normalizarTarjetaId(mov.tarjetaId),
+          fechaOrigen: fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : null
+        });
+      });
+    });
+    return { items, total: redondearDinero(items.reduce((t, it) => t + it.monto, 0)) };
+  }
+
+  function fechaInicioFormularioNuevoCiclo() {
+    const valor = document.getElementById('newFechaInicio')?.value;
+    return valor ? new Date(valor + 'T00:00:00') : null;
   }
 
   function resumenGruposJalados(grupos = gruposJaladosSeleccionados()) {
@@ -15719,8 +15770,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     // de caja al abrir el siguiente ciclo. El usuario ingresa saldos post-pago,
     // por lo que volver a restar la cuota 2/2 duplicaría el descuento.
     const disponibleAntesDeuda = disponibleAntesCuotasPropias;
-    const disponible = redondearDinero(disponibleAntesDeuda - deudaPendiente.total);
-    const compromisosTotales = redondearDinero(deudaPendiente.total);
+    // BUILD336 · los adelantos siguen en la deuda, pero no se restan al abrir: se asignan como gasto del ciclo.
+    const adelantosSeparados = redondearDinero(deudaPendiente.adelantos?.total || 0);
+    const deudaReservada = redondearDinero(deudaPendiente.total - adelantosSeparados);
+    const disponible = redondearDinero(disponibleAntesDeuda - deudaReservada);
+    const compromisosTotales = redondearDinero(deudaReservada);
 
     return {
       cuentaSoles,
@@ -15734,11 +15788,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       disponibleAntesCuotasPropias,
       cuotasPropiasPendientesTotal,
       deudaPendienteTotal: redondearDinero(deudaPendiente.total),
+      deudaReservada,
+      adelantosSeparados,
       disponibleAntesDeuda,
       fondoExcedeTotal: fondo > totalGeneral + 0.005,
       compromisosExcedenDisponible: compromisosTotales > Math.max(0, disponibleAntesCuotasPropias) + 0.005,
       disponible
     };
+  }
+
+  // BUILD336 · nunca separar más adelanto que la deuda ingresada.
+  function limitarAdelantosADeuda(adelantos, deudaTotal) {
+    const tope = redondearDinero(Math.max(0, Number(deudaTotal) || 0));
+    if (!adelantos || adelantos.total <= tope + 0.005) return adelantos || { items: [], total: 0 };
+    return { items: [], total: 0 };
   }
 
   function datosDeudaNuevoCiclo() {
@@ -15765,7 +15828,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         deudaDolaresEnSoles: dolaresEnSolesReferencia,
         total: redondearDinero(resumen.totalReferencia),
         fuente: 'heads-up',
-        gruposJalados
+        gruposJalados,
+        adelantos: limitarAdelantosADeuda(adelantosParaNuevoCiclo(gruposJalados, fechaInicioFormularioNuevoCiclo()), resumen.totalReferencia) // BUILD336
       };
     }
 
@@ -15803,7 +15867,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       deudaDolaresEnSoles,
       total,
       fuente: 'manual',
-      gruposJalados: []
+      gruposJalados: [],
+      // BUILD336 · deuda manual: los adelantos de estados aún no pagados ni marcados pagados.
+      adelantos: total > 0.005
+        ? limitarAdelantosADeuda(adelantosParaNuevoCiclo(gruposPagoTarjetas().filter(g => !pagoPendienteParaGrupo(g)), fechaInicioFormularioNuevoCiclo()), total)
+        : { items: [], total: 0 }
     };
   }
 
@@ -15853,6 +15921,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       } else {
         disponiblePreview.textContent = `S/ ${fmt(Math.max(0, datos.disponible))}`;
       }
+    }
+
+    // BUILD336
+    const adelantosRow = document.getElementById('newAdelantosRow');
+    const adelantosPreview = document.getElementById('newAdelantosPreview');
+    if (adelantosRow && adelantosPreview) {
+      const totalAdelantos = Number(datos.adelantosSeparados) || 0;
+      adelantosRow.hidden = !(totalAdelantos > 0.005);
+      adelantosPreview.textContent = `S/ ${fmt(totalAdelantos)}`;
     }
 
     if (deudaUsdPreview) {
@@ -15991,7 +16068,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       // BUILD271: se conserva como referencia, pero no fue aplicada como descuento.
       cuotasPropiasAplicadas: 0,
       cuotasPropiasCerradasSinDescuento: redondearDinero(cuentas.cuotasPropiasPendientesTotal),
-      deudaPendienteAplicada: redondearDinero(cuentas.deudaPendienteTotal),
+      // BUILD336 · lo que realmente se restó al abrir (deuda − adelantos por asignar).
+      deudaPendienteAplicada: redondearDinero(cuentas.deudaReservada),
+      adelantosSeparados: redondearDinero(cuentas.adelantosSeparados),
       disponibleAntesDeuda: redondearDinero(Math.max(0, cuentas.disponibleAntesDeuda)),
       disponible: redondearDinero(Math.max(0, disponible)),
       metaAhorro: redondearDinero(Math.max(0, meta)),
@@ -16014,8 +16093,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         dolaresEnSoles: redondearDinero(deudaDetalle.deudaDolaresEnSoles),
         totalSoles: deudaOficial,
         fuente: deudaDetalle.fuente || 'manual',
-        estadosJalados: gruposJaladosSeleccionados().map(serializarGrupoJalado)
+        estadosJalados: gruposJaladosSeleccionados().map(serializarGrupoJalado),
+        adelantosSeparados: redondearDinero(deudaDetalle.adelantos?.total || 0) // BUILD336
       },
+      adelantosPorAsignar: Array.isArray(deudaDetalle.adelantos?.items) ? deudaDetalle.adelantos.items : [], // BUILD336
       deuda: deudaOficial,
       fechaInicio,
       fechaProximoSueldo,
@@ -16336,6 +16417,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     state.cuentasInicioCiclo = cuentasInicioCiclo ? JSON.parse(JSON.stringify(cuentasInicioCiclo)) : null;
     state.deudaInicioCiclo = datos.deudaInicioCiclo ? JSON.parse(JSON.stringify(datos.deudaInicioCiclo)) : null;
     state.metaResidual = Math.max(0, meta);
+    // BUILD336 · adelantos que se asignan como gasto del ciclo (ver adelantosPendientes).
+    state.adelantosPorAsignar = Array.isArray(datos.adelantosPorAsignar) ? JSON.parse(JSON.stringify(datos.adelantosPorAsignar)) : [];
     if (!isNaN(intocable)) state.montoIntocable = intocable;
     state.deudaActual = deuda;
     state.deudaBaseCiclo = redondearDinero(state.deudaActual);
@@ -16391,6 +16474,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       : (modoConciliacion === 'pago'
         ? `Nuevo ciclo · pago anterior conciliado`
         : `Nuevo ciclo · ${state.semanas.length} bloques según sus días`));
+    if (state.adelantosPorAsignar.length) {
+      const totalAd = redondearDinero(state.adelantosPorAsignar.reduce((t, it) => t + (Number(it.monto) || 0), 0));
+      setTimeout(() => toast(`Adelantos por asignar · S/ ${fmt(totalAd)} · en Movimientos`), 2600); // BUILD336
+    }
     render();
   }
   
@@ -17017,8 +17104,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       prefijo.push({ label: 'Saldos en cuentas', value: saldos });
       prefijo.push({ label: '− Fondo', value: -fondo });
       prefijo.push({ label: '− Deuda pendiente inicial', value: -deuda });
+      // BUILD336 · los adelantos siguen en la deuda pero no se restaron al abrir: salen en Gastado.
+      const adelantosSep = redondearDinero(Number(deudaInicio?.adelantosSeparados) || 0);
+      if (adelantosSep > 0.005) prefijo.push({ label: '+ Adelantos (salen en Gastado)', value: adelantosSep });
       const inicioOriginal = Number.isFinite(Number(cuentasInicio.disponible)) ? Number(cuentasInicio.disponible) : null;
-      const otros = inicioOriginal === null ? 0 : redondearDinero(inicioOriginal - (saldos - fondo - deuda));
+      const otros = inicioOriginal === null ? 0 : redondearDinero(inicioOriginal - (saldos - fondo - deuda + adelantosSep));
       if (Math.abs(otros) >= 0.005) prefijo.push({ label: '± Otros ajustes de apertura', value: otros });
       if (Math.abs(netoAjDisp) >= 0.005) prefijo.push({ label: '± Correcciones de compras jaladas', value: netoAjDisp });
     }
@@ -18458,6 +18548,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function coincideMovimientoBandeja(item, mov) {
+    if (mov?.adelantoOrigenId) return false; // BUILD336 · no es un consumo nuevo
     const tipo = normalizarTipoMovimiento(mov.tipo);
     if (item.credito) {
       if (!esMovimientoTarjeta(mov) || normalizarTarjetaId(mov.tarjetaId) !== tarjetaBandeja(item)) return false;
@@ -18584,6 +18675,147 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </div>
       <div class="log-right"><div class="log-amount">${item.moneda === 'USD' ? 'US$' : 'S/'}${fmt(item.monto)}</div></div>`;
     return div;
+  }
+
+  // ============ BUILD336 · ADELANTOS POR ASIGNAR ============
+  // Al abrir el ciclo, los adelantos (A) del ciclo anterior siguen en la deuda de tarjeta,
+  // pero no se restaron del Disponible inicial. Aparecen aquí y, al confirmarlos, entran
+  // como gasto (S, sin deuda nueva) del bloque o bloques que el usuario elija.
+  // Lo pendiente se deriva: un adelanto deja de estar pendiente si hay un movimiento con
+  // su adelantoOrigenId. Deshacer o eliminar ese movimiento lo devuelve a la lista.
+  var adelantoAsignacionEnCurso = null; // { id, monto, desde }
+
+  function movimientoOrigenAdelanto(item) {
+    const ref = String(item?.origenRef || '');
+    const coincide = mov => mov && (ref.startsWith('id:')
+      ? String(mov.id) === ref.slice(3)
+      : (ref.startsWith('ts:') && String(mov.timestamp) === ref.slice(3)));
+    for (const ciclo of (Array.isArray(state.historialCiclos) ? state.historialCiclos : [])) {
+      const mov = (Array.isArray(ciclo?.movimientos) ? ciclo.movimientos : []).find(coincide);
+      if (mov) return mov;
+    }
+    return (Array.isArray(state.tarjetaMovimientosArrastrados) ? state.tarjetaMovimientosArrastrados : []).find(coincide) || null;
+  }
+
+  function adelantosPendientes() {
+    const lista = Array.isArray(state.adelantosPorAsignar) ? state.adelantosPorAsignar : [];
+    if (!lista.length) return [];
+    const asignados = new Set((Array.isArray(state.log) ? state.log : []).map(m => m?.adelantoOrigenId).filter(Boolean));
+    return lista
+      .filter(it => it && it.id && !asignados.has(it.id))
+      .map(it => {
+        // El monto sigue a la compra original: si se editó o eliminó (§9.4), la lista lo refleja.
+        const origen = movimientoOrigenAdelanto(it);
+        if (!origen || !esMovimientoAdelanto(origen)) return null;
+        return { ...it, monto: redondearDinero(Number(origen.monto) || 0), detalle: origen.detalle || it.detalle };
+      })
+      .filter(it => it && it.monto > 0.005);
+  }
+
+  function origenAdelantoParaMovimiento(monto) {
+    const p = adelantoAsignacionEnCurso;
+    if (!p) return {};
+    if (Date.now() - p.desde > 15 * 60000) { adelantoAsignacionEnCurso = null; return {}; }
+    if (Math.abs((Number(monto) || 0) - p.monto) > 0.011) return {};
+    adelantoAsignacionEnCurso = null;
+    return { adelantoOrigenId: p.id };
+  }
+
+  function appendAdelantosSummary(root) {
+    if (!root || movementBankFilter !== 'all') return 0;
+    const pendientes = adelantosPendientes();
+    if (!pendientes.length) return 0;
+    const total = redondearDinero(pendientes.reduce((t, it) => t + it.monto, 0));
+    const menu = document.createElement('details');
+    menu.className = 'projected-movements-menu adelantos-menu';
+    menu.open = true; // siempre visible mientras haya algo por asignar
+    const head = document.createElement('summary');
+    head.className = 'projected-movements-head';
+    head.innerHTML = `<span class="projected-movements-label"><span class="projected-movements-chevron">›</span><span>Adelantos por asignar · ${pendientes.length}</span></span><span class="projected-movements-total">S/ ${fmt(total)}</span>`;
+    menu.appendChild(head);
+    const body = document.createElement('div');
+    body.className = 'projected-movements-body';
+    body.innerHTML = pendientes.map(it => `
+      <div class="log-item projected-movement bandeja-item" data-id="${escapeHtml(it.id)}" onclick="openAdelantoItem(this.dataset.id)">
+        <div class="log-left">
+          <div class="log-dot PROY">A</div>
+          <div class="log-info">
+            <div class="log-detail">${escapeHtml(it.detalle)}</div>
+            <div class="log-meta"><span class="projected-status">Por asignar</span><span class="card-bank-badge">${escapeHtml(nombreTarjeta(it.tarjetaId))}</span>${it.fechaOrigen ? `<span>${escapeHtml(formatFecha(new Date(it.fechaOrigen)))}</span>` : ''}</div>
+          </div>
+        </div>
+        <div class="log-right"><div class="log-amount">S/${fmt(it.monto)}</div></div>
+      </div>`).join('');
+    menu.appendChild(body);
+    root.appendChild(menu);
+    return pendientes.length;
+  }
+
+  function openAdelantoItem(id) {
+    bloqueLongPressTriggered = false;
+    const item = adelantosPendientes().find(it => it.id === id);
+    if (!item) { toast('Ese adelanto ya está asignado'); renderLog(); return; }
+    openModal(`
+      <h2>Asignar <span class="accent">adelanto</span></h2>
+      <p class="modal-sub"><span class="card-bank-badge bank-${normalizarTarjetaId(item.tarjetaId)}">${escapeHtml(nombreTarjeta(item.tarjetaId))}</span> Ya está en la deuda de la tarjeta. Al asignarlo sale de tu Gastable como gasto de este ciclo, una sola vez.</p>
+      <div class="modal-field">
+        <label>Monto</label>
+        <div style="font-size:22px;font-weight:750;font-variant-numeric:tabular-nums;">S/ ${fmt(item.monto)}</div>
+      </div>
+      <div class="modal-field">
+        <label>Detalle</label>
+        <input type="text" id="adelantoDetalle" value="${escapeHtml(item.detalle)}" autocomplete="off">
+      </div>
+      <div class="modal-field">
+        <label>Categoría</label>
+        <select id="adelantoCategoria">${opcionesCategoriaMovimiento(item.categoria)}</select>
+      </div>
+      <div class="modal-field">
+        <label>¿De dónde sale?</label>
+        <div class="edit-type-grid">
+          <label class="edit-type-option"><input type="radio" name="adelantoBloques" value="actual" checked><span>Bloque actual</span></label>
+          <label class="edit-type-option"><input type="radio" name="adelantoBloques" value="sem"><span>Repartir (sem)</span></label>
+          <label class="edit-type-option"><input type="radio" name="adelantoBloques" value="elegir"><span>Elegir bloques…</span></label>
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn-primary" data-id="${escapeHtml(item.id)}" onclick="asignarAdelantoItem(this.dataset.id)">Asignar</button>
+      </div>
+    `);
+  }
+
+  function asignarAdelantoItem(id) {
+    const item = adelantosPendientes().find(it => it.id === id);
+    if (!item) { closeModal(); toast('Ese adelanto ya está asignado'); renderLog(); return; }
+    const modo = document.querySelector('input[name="adelantoBloques"]:checked')?.value || 'actual';
+    const detalle = (document.getElementById('adelantoDetalle')?.value || '').trim() || item.detalle;
+    const categoria = normalizarCategoriaMovimiento(document.getElementById('adelantoCategoria')?.value);
+    // S: resta Disponible y bloques, sin sumar deuda (ya está en la deuda inicial).
+    const datosRegistro = {
+      monto: item.monto,
+      tipo: 'S',
+      etiqueta: modo === 'sem' ? 'sem' : null,
+      detalle,
+      categoria,
+      tarjetaId: normalizarTarjetaId(item.tarjetaId),
+      cubierto: false,
+      cuotaPropia: false,
+      monedaOriginal: 'PEN',
+      montoOriginal: item.monto,
+      tipoCambio: null
+    };
+    adelantoAsignacionEnCurso = { id: item.id, monto: item.monto, desde: Date.now() };
+    if (modo === 'elegir') {
+      if (!puedeElegirBloqueMovimiento(datosRegistro)) { adelantoAsignacionEnCurso = null; return; }
+      pendingQuickMovement = datosRegistro;
+      bloqueSelectorAbiertoEn = Date.now();
+      selectorBloqueModo = 'registro';
+      mostrarSelectorBloqueMovimiento();
+      return;
+    }
+    closeModal();
+    finalizarQuickMovement(datosRegistro);
   }
 
   function appendBandejaSummary(root) {
@@ -19097,6 +19329,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function cancelQuickMovementCategory() {
     pendingQuickMovement = null;
     bandejaRegistroEnCurso = null; // BUILD311
+    adelantoAsignacionEnCurso = null; // BUILD336
     closeModal();
     requestAnimationFrame(() => document.getElementById('inputAmount')?.focus());
   }
@@ -19273,6 +19506,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function processStructuredCommand(fechaMovimientoForzada = null) {
     bandejaRegistroEnCurso = null; // BUILD311 · registro manual: sin vínculo con la bandeja
+    adelantoAsignacionEnCurso = null; // BUILD336
     const amountEl = document.getElementById('inputAmount');
     const detalleEl = document.getElementById('inputDetalle');
     const montoRaw = parseFloat(amountEl.value);
@@ -19627,6 +19861,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       fechaISO: ahora.toISOString(),
       timestamp: ahora.getTime(),
       ...origenCorreoParaMovimiento(monto), // BUILD311 · vínculo con el correo del banco
+      ...origenAdelantoParaMovimiento(monto), // BUILD336 · vínculo con el adelanto asignado
       ...(metadata.planCuotasId ? {
         planCuotasId: metadata.planCuotasId,
         cuotaNumero: Number(metadata.cuotaNumero) || 1,
@@ -19773,6 +20008,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       fechaISO: ahora.toISOString(),
       timestamp: ahora.getTime(),
       ...origenCorreoParaMovimiento(monto), // BUILD311 · vínculo con el correo del banco
+      ...origenAdelantoParaMovimiento(monto), // BUILD336 · vínculo con el adelanto asignado
       ...(metadata.planCuotasId ? {
         planCuotasId: metadata.planCuotasId,
         cuotaNumero: Number(metadata.cuotaNumero) || 1,

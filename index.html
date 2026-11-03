@@ -8327,7 +8327,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '353';
+  const LEDGER_BUILD = '354';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -11884,6 +11884,45 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   const RECURRENTES_TOLERANCIA_ESTRICTA = 0.02;
   let recurrentesCache = { firma: '', lista: [] };
 
+  // BUILD354 · mismo servicio con nombres distintos ("EBN*PRIME VIDEO" = "prime video" = "amazon",
+  // "ECM*CRUNCHYROLL" = "crunchy", "Google YouTubePremium" = "youtube", "claude" = "Anthropic").
+  // Se ignoran prefijos de pasarela y palabras genéricas, y se aceptan prefijos de palabra (≥5 letras) y alias conocidos.
+  const RECURRENTE_RUIDO = new Set(['com', 'bill', 'www', 'pe', 'pago', 'pagos', 'google', 'apple', 'ebn', 'ecm', 'dlc', 'sa', 'sac', 'inc', 'llc',
+    'peru', 'lima', 'plan', 'premium', 'suscripcion', 'subscription', 'membership', 'mensual', 'anual', 'the', 'de', 'la', 'el',
+    'music', 'video', 'plus', 'pro', 'tv', 'app', 'store', 'digital', 'online', 'servicio', 'servicios']);
+  const RECURRENTE_ALIAS = [
+    ['claude', 'anthropic'],
+    ['chatgpt', 'gpt', 'openai'],
+    ['amazon', 'prime', 'primevideo'],
+    ['crunchyroll', 'crunchy'],
+    ['youtube', 'youtubepremium'],
+    ['disney', 'disneyplus'],
+    ['hbo', 'hbomax']
+  ];
+
+  function tokensRecurrente(clave) {
+    return String(clave || '').split(' ')
+      .filter(t => t.length >= 3 && !RECURRENTE_RUIDO.has(t))
+      .map(t => {
+        const alias = RECURRENTE_ALIAS.find(grupo => grupo.includes(t));
+        return alias ? alias[0] : t;
+      });
+  }
+
+  // Variantes que separan servicios de la misma marca (YouTube vs YouTube Music).
+  const RECURRENTE_VARIANTES = ['music', 'kids', 'family', 'familia', 'duo', 'student', 'estudiante'];
+
+  function mismoRecurrente(a, b) {
+    if (!a || !b) return false;
+    const va = RECURRENTE_VARIANTES.filter(v => a.split(' ').includes(v)).join(',');
+    const vb = RECURRENTE_VARIANTES.filter(v => b.split(' ').includes(v)).join(',');
+    if (va !== vb) return false;
+    if (similitudDetalles(a, b) >= UMBRAL_SUGERENCIA) return true;
+    const ta = tokensRecurrente(a), tb = tokensRecurrente(b);
+    return ta.some(x => tb.some(y => x === y
+      || (Math.min(x.length, y.length) >= 5 && (x.startsWith(y) || y.startsWith(x)))));
+  }
+
   function movimientoCuentaParaRecurrente(mov) {
     if (!mov || mov.etiqueta === 'recalcula' || esMovimientoProyectado(mov) || mov.adelantoOrigenId || mov.planCuotasId) return false;
     if (!(Number(mov.monto) > 0)) return false;
@@ -11907,16 +11946,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         if (!movimientoCuentaParaRecurrente(mov)) return;
         const clave = claveDetalleAprendizaje(mov.detalle);
         if (!clave || clave.length < 3) return;
-        let grupo = grupos.find(g => similitudDetalles(clave, g.clave) >= UMBRAL_SUGERENCIA);
-        if (!grupo) { grupo = { clave, porCiclo: new Map() }; grupos.push(grupo); }
+        // BUILD354 · alias y prefijos solo entre suscripciones; el resto, por parecido de texto como antes.
+        const sus = normalizarCategoriaMovimiento(mov.categoria) === 'Suscripciones';
+        let grupo = grupos.find(g => g.sus === sus && g.claves.some(k => sus ? mismoRecurrente(clave, k) : similitudDetalles(clave, k) >= UMBRAL_SUGERENCIA));
+        if (!grupo) { grupo = { clave, sus, claves: [clave], nombres: new Set(), porCiclo: new Map() }; grupos.push(grupo); }
+        else if (!grupo.claves.includes(clave)) grupo.claves.push(clave);
+        grupo.nombres.add(clave);
         if (!grupo.porCiclo.has(orden)) grupo.porCiclo.set(orden, []);
         grupo.porCiclo.get(orden).push(mov);
       });
     });
 
-    const enEsteCiclo = clave => log.some(m => m && m.etiqueta !== 'recalcula'
+    const enEsteCiclo = claves => log.some(m => m && m.etiqueta !== 'recalcula'
       && (esMovimientoProyectado(m) || movimientoCuentaParaRecurrente(m))
-      && similitudDetalles(claveDetalleAprendizaje(m.detalle), clave) >= UMBRAL_SUGERENCIA);
+      && claves.some(k => mismoRecurrente(claveDetalleAprendizaje(m.detalle), k)));
 
     const lista = grupos.map(g => {
       const todos = [...g.porCiclo.values()].flat();
@@ -11940,13 +11983,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       } else if ([...g.porCiclo.values()].some(movs => movs.length > RECURRENTES_MAX_COBROS)) {
         return null;
       }
-      if (enEsteCiclo(g.clave)) return null;
-      if (estaOcultoRecurrente(g.clave)) return null; // BUILD345 · lo desmarcaste antes
+      if (enEsteCiclo(g.claves)) return null;
+      if (g.claves.some(k => estaOcultoRecurrente(k))) return null; // BUILD345 · lo desmarcaste antes
       return {
         clave: g.clave,
-        detalle: String(ultimo.detalle || '').replace(/\s*·\s*USD\s.*$/i, '').trim() || g.clave,
+        detalle: String(ultimo.detalle || '').replace(/\s*·\s*USD\s.*$/i, '').replace(/^[A-Z]{2,5}\*\s*/i, '').trim() || g.clave, // BUILD354 · sin "EBN*"
         monto: redondearDinero(ultimos.reduce((t, m) => t + (Number(m.monto) || 0), 0)),
         cobros: ultimos.length,
+        nombres: g.nombres.size, // BUILD354 · cuántos nombres distintos agrupa
         ciclos: g.porCiclo.size,
         de: ciclos.length,
         suscripcion: esSuscripcion,
@@ -11964,7 +12008,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function estaOcultoRecurrente(clave) {
-    return recurrentesOcultos().some(o => o && similitudDetalles(clave, o.clave) >= UMBRAL_SUGERENCIA);
+    return recurrentesOcultos().some(o => o && mismoRecurrente(clave, o.clave));
   }
 
   function ocultarRecurrentes(items) {
@@ -12012,7 +12056,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <input type="checkbox" data-recurrente="${i}" checked onchange="actualizarTotalRecurrentes()">
         <span class="recurrente-info">
           <span class="recurrente-nombre">${escapeHtml(it.detalle)}</span>
-          <span class="recurrente-meta">${it.categoria ? escapeHtml(it.categoria) + ' · ' : ''}${it.ciclos} de ${it.de} ciclos${it.cobros > 1 ? ` · ${it.cobros} cobros` : ''}</span>
+          <span class="recurrente-meta">${it.categoria ? escapeHtml(it.categoria) + ' · ' : ''}${it.ciclos} de ${it.de} ciclos${it.cobros > 1 ? ` · ${it.cobros} cobros` : ''}${it.nombres > 1 ? ` · ${it.nombres} nombres` : ''}</span>
         </span>
         <span class="recurrente-monto">S/${fmt(it.monto)}</span>
       </label>`).join('');
@@ -18911,7 +18955,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const montoPen = item.moneda === 'USD' ? null : Number(item.monto);
     return movimientosProyectadosActuales()
       .map(({ mov, index }) => {
-        const sim = clave ? similitudDetalles(clave, claveDetalleAprendizaje(mov.detalle)) : 0;
+        const claveProy = claveDetalleAprendizaje(mov.detalle);
+        const sim = clave ? Math.max(similitudDetalles(clave, claveProy), mismoRecurrente(clave, claveProy) ? UMBRAL_SUGERENCIA : 0) : 0; // BUILD354
         const mismoMonto = montoPen !== null && Math.abs((Number(mov.monto) || 0) - montoPen) <= 0.011;
         return (sim >= UMBRAL_SUGERENCIA || mismoMonto) ? { mov, index, sim } : null;
       })

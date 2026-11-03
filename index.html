@@ -8283,7 +8283,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '336';
+  const LEDGER_BUILD = '337';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -15419,7 +15419,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <!-- BUILD336 · adelantos: siguen en la deuda, pero se asignan como gasto en Movimientos -->
         <div class="rollover-row" id="newAdelantosRow" hidden>
           <span class="rollover-week">Adelantos por asignar · no se restan aquí</span>
-          <span class="rollover-amount" id="newAdelantosPreview">—</span>
+          <span class="rollover-amount" id="newAdelantosPreview" style="white-space:nowrap;flex-shrink:0;">—</span><!-- BUILD337 · el monto no se parte -->
         </div>
       </div>
 

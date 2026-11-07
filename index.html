@@ -8034,6 +8034,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-calc-row.total.ref-calc-first { border-top: 0; margin-top: 0; padding-top: 5px; }
 .ref-plan-line { font-size: 15px; color: var(--ink-dim); margin: 2px 0 12px; }
 .ref-plan-line .ref-num { color: var(--ink); font-size: 15px; font-weight: 700; }
+#refHero { font-size: clamp(30px, 9vw, 40px); display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; row-gap: 2px; }
+.ref-hero-de { font-size: 15px; font-weight: 400; color: var(--ink-mute); letter-spacing: -.02em; white-space: nowrap; }
+.ref-sin-edit { display: flex; justify-content: space-between; align-items: baseline; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; margin: 8px 0 4px; font-size: 14px; color: var(--ink-dim); box-shadow: 0 4px 12px rgba(0,0,0,.05); }
+.ref-sin-edit .ref-num { font-size: 17px; font-weight: 700; color: var(--ink); }
+.ref-sin-float { position: fixed; top: 8px; z-index: 90; margin: 0; display: none; }
+.ref-sin-float.on { display: flex; }
 .ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
 </style>
 </head>
@@ -8502,7 +8508,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '373';
+  const LEDGER_BUILD = '374';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -8822,6 +8828,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       view.setAttribute('aria-hidden', i === currentView ? 'false' : 'true');
     });
     try { localStorage.setItem('ledger-active-view-v1', String(currentView)); } catch(e) {}
+    try { actualizarFlotanteSinAsignar(); } catch(e) {} // BUILD374
     requestAnimationFrame(updateViewHeight);
     if (currentView === 1) requestAnimationFrame(() => runSwipeOnboarding(document.getElementById('logContainer')));
 
@@ -16127,6 +16134,43 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return { paraPlan: redondearDinero(suma), sinAsignar, exceso, ahorraria };
   }
 
+  // BUILD374 · "S/ plan de S/ Disponible" (el mismo Disponible del desglose).
+  function heroPlanReferenciasHtml(suma, disponible, oculto) {
+    return `${oculto ? 'S/ ****' : 'S/' + fmt(suma)}<span class="ref-hero-de">de ${oculto ? 'S/ ****' : 'S/' + fmt(disponible)}</span>`;
+  }
+
+  function sinAsignarEdicionHtml(sinAsignar) {
+    const v = redondearDinero(sinAsignar);
+    return v < -0.005
+      ? `<span>Excedes</span><span class="ref-num">S/${fmt(-v)}</span>`
+      : `<span>Sin asignar</span><span class="ref-num">S/${fmt(Math.max(0, v))}</span>`;
+  }
+
+  // BUILD374 · la fila "Sin asignar" se queda visible arriba al bajar por los sliders.
+  // (position: sticky no funciona dentro del carrusel de pantallas, que usa transform.)
+  function actualizarFlotanteSinAsignar() {
+    const fila = document.getElementById('refSinAsignarEdit');
+    let flot = document.getElementById('refSinAsignarFloat');
+    const activo = referenciasEditando && typeof currentView !== 'undefined' && currentView === 2 && fila;
+    if (!activo) { if (flot) flot.classList.remove('on'); return; }
+    if (!flot) {
+      flot = document.createElement('div');
+      flot.id = 'refSinAsignarFloat';
+      flot.className = 'ref-sin-edit ref-sin-float';
+      document.body.appendChild(flot);
+      document.addEventListener('scroll', actualizarFlotanteSinAsignar, { capture: true, passive: true });
+      window.addEventListener('resize', actualizarFlotanteSinAsignar, { passive: true });
+    }
+    const r = fila.getBoundingClientRect();
+    const mostrar = r.top < 8 && r.width > 0;
+    flot.classList.toggle('on', mostrar);
+    if (mostrar) {
+      flot.style.left = r.left + 'px';
+      flot.style.width = r.width + 'px';
+      flot.innerHTML = fila.innerHTML;
+    }
+  }
+
   function planResumenReferenciasHtml(r, meta, oculto) {
     const m = v => oculto ? 'S/****' : 'S/' + fmt(v);
     const linea = r.exceso > 0
@@ -16193,7 +16237,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     let html = `<div class="ref-view">
       <div class="ref-summary${referenciasDesgloseAbierto ? ' open' : ''}" onclick="toggleReferenciasDesglose(event)">
         <div class="ref-eyebrow"><span>Tu plan</span><span class="ref-eyebrow-actions"><button type="button" class="ref-eye" onclick="toggleReferenciasPrivacidad(event)" aria-label="${oculto ? 'Mostrar montos' : 'Ocultar montos'}"><svg class="ui-icon"><use href="#icon-${oculto ? 'eye-off' : 'eye'}"></use></svg></button>${chev}</span></div>
-        <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.suma)}</div>
+        <div class="ref-hero" id="refHero">${heroPlanReferenciasHtml(m.suma, m.disponible, oculto)}</div>
         <div id="refBloques">${planResumenReferenciasHtml(m, m.meta, oculto)}</div>
         ${m.sugerencia.faltante > 0.005 ? `<div class="ref-aviso">Tu meta implica ${montoPrivadoReferencias(m.sugerencia.faltante, oculto)} menos que un ciclo típico</div>` : ''}
         ${referenciasDesgloseAbierto ? `<div class="ref-calc" onclick="event.stopPropagation()">
@@ -16216,6 +16260,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       const tipico = det.tipico;
       const bloqueadas = referenciasBloqueadas();
       const sinAsignar = m.sinAsignar; // BUILD373 · Disponible − Tu plan
+      // BUILD374 · fila fija con lo sin asignar, arriba de los sliders.
+      html += `<div class="ref-sin-edit" id="refSinAsignarEdit">${sinAsignarEdicionHtml(sinAsignar)}</div>`;
       html += m.filas.map(f => {
         const ref = f.referencia || 0;
         const tope = redondearDinero(ref + Math.max(0, sinAsignar));
@@ -16265,6 +16311,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     }
     html += '</div>';
     root.innerHTML = html;
+    requestAnimationFrame(actualizarFlotanteSinAsignar); // BUILD374
   }
 
   function toggleReferenciasDesglose(event) {
@@ -16398,7 +16445,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const bloques = document.getElementById('refBloques');
     if (bloques) bloques.innerHTML = planResumenReferenciasHtml(resumenPlanReferencias(suma, m.disponible, m.meta), m.meta, oculto);
     const hero = document.getElementById('refHero');
-    if (hero) hero.textContent = oculto ? 'S/ ****' : 'S/' + fmt(suma);
+    if (hero) hero.innerHTML = heroPlanReferenciasHtml(suma, m.disponible, oculto);
+    const fila = document.getElementById('refSinAsignarEdit');
+    if (fila) fila.innerHTML = sinAsignarEdicionHtml(m.disponible - suma); // BUILD374 · en vivo
+    actualizarFlotanteSinAsignar();
   }
 
   function soltarSliderReferencia(slider) {

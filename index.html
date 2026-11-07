@@ -7959,6 +7959,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-hint { font-size: 12.5px; color: var(--ink-mute); margin-top: 12px; line-height: 1.45; }
 /* Al enfocar un campo, el navegador podía desplazar el contenedor de pantallas y mostrar media vista. */
 .views-shell { overflow: clip; }
+.ref-actions { display: flex; gap: 8px; }
+.ref-aviso { font-size: 13px; color: var(--ink-dim); margin-top: 6px; }
+.ref-aviso .ref-num { color: var(--ink-dim); }
 .ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
 </style>
 </head>
@@ -8427,7 +8430,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '363';
+  const LEDGER_BUILD = '364';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -15659,6 +15662,51 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return Number.isFinite(valor) && valor > 0 ? redondearDinero(valor) : null;
   }
 
+  // BUILD364 · categorías que el usuario tocó a mano (aunque las haya dejado vacías).
+  function referenciasManuales() {
+    if (!state.referenciasManual || typeof state.referenciasManual !== 'object' || Array.isArray(state.referenciasManual)) {
+      state.referenciasManual = {};
+    }
+    return state.referenciasManual;
+  }
+
+  // BUILD364 · sin referencias guardadas ni tocadas, se muestra la sugerencia (sin guardarla:
+  // abrir la app no es un cambio de datos). Se guarda al editar un campo o al tocar Listo.
+  function referenciasEnModoSugerido() {
+    const guardadas = referenciasGuardadas();
+    return !Object.keys(guardadas).some(cat => Number(guardadas[cat]) > 0)
+      && !Object.keys(referenciasManuales()).length;
+  }
+
+  // BUILD364 · Sugerencia: típico redondeado a la decena; si la suma de típicos supera el
+  // disponible variable, se escala en proporción. Típico 0 → sin referencia.
+  // El redondeo puede pasarse por unos soles: se recortan decenas a las mayores hasta caber.
+  function sugerenciaReferencias(disponible) {
+    const tipico = tipicoPorCategoriaReferencias();
+    const cats = categoriasVariablesReferencias().filter(cat => (Number(tipico[cat]) || 0) > 0.005);
+    const sumaTipicos = redondearDinero(cats.reduce((t, cat) => t + tipico[cat], 0));
+    const disp = Math.max(0, Number(disponible) || 0);
+    const factor = sumaTipicos > disp ? (sumaTipicos > 0 ? disp / sumaTipicos : 0) : 1;
+    const refs = {};
+    cats.forEach(cat => {
+      const valor = Math.round(tipico[cat] * factor / 10) * 10;
+      if (valor > 0) refs[cat] = valor;
+    });
+    let suma = Object.values(refs).reduce((t, v) => t + v, 0);
+    while (suma > disp + 0.005 && Object.keys(refs).length) {
+      const mayor = Object.keys(refs).sort((a, b) => refs[b] - refs[a])[0];
+      refs[mayor] -= 10;
+      suma -= 10;
+      if (refs[mayor] <= 0) delete refs[mayor];
+    }
+    return { refs, sumaTipicos, faltante: sumaTipicos > disp ? redondearDinero(sumaTipicos - disp) : 0 };
+  }
+
+  function guardarSugerenciaReferencias(refs) {
+    state.referenciasCategoria = { ...refs };
+    state.referenciasManual = {};
+  }
+
   // Gasto real que pesa en el presupuesto: S y DS (DS+P la mitad), como el Gastado del Excel.
   // Fuera: redistribuciones, F / F+DS (Fondo), DS+C, A, adelantos asignados y proyectados.
   function movimientoCuentaEnReferencias(mov) {
@@ -15748,8 +15796,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const adelantos = totalAdelantosReferencias();
     const disponible = redondearDinero(inicio - meta - fijos.total - adelantos);
     const gasto = gastoPorCategoriaReferencias(state.log);
+    const sugerencia = sugerenciaReferencias(disponible);
+    const sugerido = referenciasEnModoSugerido();
+    const refDe = cat => sugerido ? (sugerencia.refs[cat] || null) : referenciaDeCategoria(cat);
     const filas = categoriasVariablesReferencias().map((cat, orden) => ({
-      cat, orden, gastado: redondearDinero(gasto[cat] || 0), referencia: referenciaDeCategoria(cat)
+      cat, orden, gastado: redondearDinero(gasto[cat] || 0), referencia: refDe(cat)
     }));
     // Orden estable: por referencia (mayor a menor); sin referencia al final.
     filas.sort((a, b) => {
@@ -15758,7 +15809,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       return a.orden - b.orden;
     });
     const suma = redondearDinero(filas.reduce((t, f) => t + (f.referencia || 0), 0));
-    return { inicio, meta, fijos, adelantos, disponible, filas, suma };
+    return { inicio, meta, fijos, adelantos, disponible, filas, suma, sugerencia, sugerido };
   }
 
   function lineaReferenciasHtml(suma, disponible) {
@@ -15794,6 +15845,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <div class="ref-eyebrow"><span>Disponible variable</span>${chev}</div>
         <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.disponible)}</div>
         <div class="ref-subline" id="refSubline">${lineaReferenciasHtml(m.suma, m.disponible)}</div>
+        ${m.sugerencia.faltante > 0.005 ? `<div class="ref-aviso">Tu meta implica <span class="ref-num">S/${fmt(m.sugerencia.faltante)}</span> menos que un ciclo típico</div>` : ''}
         ${referenciasDesgloseAbierto ? `<div class="ref-calc" onclick="event.stopPropagation()">
           <div class="ref-calc-row"><span>Inicio del ciclo</span><span class="ref-num">S/${fmt(m.inicio)}</span></div>
           <div class="ref-calc-row"><span>− Meta de ahorro</span><span class="ref-num">S/${fmt(m.meta)}</span></div>
@@ -15804,7 +15856,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>` : ''}
       </div>
       <div class="ref-head"><span class="ref-title">${referenciasEditando ? 'Editar referencias' : 'Por categoría'}</span>
-        <button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button></div>`;
+        <span class="ref-actions">${referenciasEditando ? '<button type="button" class="ref-btn" onclick="sugerirReferencias()">Sugerir</button>' : ''}<button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button></span></div>`;
 
     if (referenciasEditando) {
       const tipico = tipicoPorCategoriaReferencias();
@@ -15866,16 +15918,47 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const cat = input.getAttribute('data-ref-cat');
     if (!categoriasVariablesReferencias().includes(cat)) return;
     const valor = leerMontoReferencia(input.value);
+    if (referenciasEnModoSugerido()) guardarSugerenciaReferencias(modeloReferencias().sugerencia.refs); // BUILD364
     const refs = referenciasGuardadas();
     if (valor) refs[cat] = valor; else delete refs[cat];
+    referenciasManuales()[cat] = true; // BUILD364 · ya no se sobrescribe solo
     input.value = valor ? valor.toFixed(2) : '';
     saveState({ markModified: true, sync: true });
+  }
+
+  // BUILD364 · Sugerir: recalcula todas; si hay valores puestos a mano, pide confirmación.
+  function sugerirReferencias(confirmado = false) {
+    const activo = document.activeElement;
+    if (activo && activo.matches && activo.matches('#referenciasView input[data-ref-cat]')) { referenciaCambio(activo); activo.blur(); }
+    const manuales = Object.keys(referenciasManuales());
+    if (!confirmado && manuales.length) {
+      openModal(`
+        <h2>Sugerir <span class="accent">referencias</span></h2>
+        <p class="modal-sub">Cambiaste a mano ${manuales.length === 1 ? '1 referencia' : manuales.length + ' referencias'}. La sugerencia las reemplaza todas a partir del típico de tus últimos 3 ciclos.</p>
+        <div class="modal-buttons">
+          <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn-primary" onclick="closeModal(); sugerirReferencias(true)">Reemplazar</button>
+        </div>
+      `);
+      return;
+    }
+    const refs = modeloReferencias().sugerencia.refs;
+    if (!Object.keys(refs).length) { toast('Aún no hay ciclos con gasto para sugerir'); return; }
+    guardarSugerenciaReferencias(refs);
+    saveState({ markModified: true, sync: true });
+    renderReferencias();
+    requestAnimationFrame(updateViewHeight);
   }
 
   function toggleReferenciasEdicion() {
     if (referenciasEditando) {
       const activo = document.activeElement;
       if (activo && activo.matches && activo.matches('#referenciasView input[data-ref-cat]')) { referenciaCambio(activo); activo.blur(); }
+      // BUILD364 · Listo con la sugerencia sin tocar: queda guardada.
+      if (referenciasEnModoSugerido()) {
+        const refs = modeloReferencias().sugerencia.refs;
+        if (Object.keys(refs).length) { guardarSugerenciaReferencias(refs); saveState({ markModified: true, sync: true }); }
+      }
     }
     referenciasEditando = !referenciasEditando;
     renderReferencias();

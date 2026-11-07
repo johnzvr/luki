@@ -8528,7 +8528,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '378';
+  const LEDGER_BUILD = '379';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -24743,12 +24743,17 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const previa = evaluar(remoteState);
     if (previa) return previa;
 
-    let result = await remoteWrite(JSON.stringify(state), { force });
+    // BUILD379 · se recuerda como "sincronizado" exactamente lo que se subió, no el
+    // estado al terminar: un cambio hecho mientras se escribía quedaba como base,
+    // aparecía un falso "Drive más reciente" y ese cambio nunca se subía.
+    let subido = JSON.stringify(state);
+    let result = await remoteWrite(subido, { force });
     if (result.conflict) {
       // Otro dispositivo escribió entre la lectura y la escritura.
       const tras = evaluar(result.state);
       if (tras) return tras;
-      result = await remoteWrite(JSON.stringify(state), { force });
+      subido = JSON.stringify(state);
+      result = await remoteWrite(subido, { force });
       if (result.conflict) {
         pendingRemoteState = result.state;
         pendingUploadRemoteState = result.state;
@@ -24758,12 +24763,18 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     }
     if (!result.ok) return { blocked: true, status: 'off' };
 
-    rememberSyncedVersion(state);
-    markUploadPending(false);
-    sessionHasExplicitDataChange = false;
-    sessionSyncBaselineState = JSON.parse(JSON.stringify(state));
+    const versionSubida = JSON.parse(subido);
+    rememberSyncedVersion(versionSubida);
     pendingRemoteState = null;
     pendingUploadRemoteState = null;
+    if (syncRelevantFingerprint(state) !== syncRelevantFingerprint(versionSubida)) {
+      // Hubo cambios durante la subida: siguen pendientes y se suben enseguida.
+      scheduleSyncUpload();
+      return { blocked: false, status: 'ok', uploaded: true };
+    }
+    markUploadPending(false);
+    sessionHasExplicitDataChange = false;
+    sessionSyncBaselineState = versionSubida;
     updateSyncUI('ok');
     return { blocked: false, status: 'ok', uploaded: true };
   }
@@ -24905,8 +24916,32 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return configs[status] || configs.off;
   }
 
+  // BUILD379 · el aviso de Drive espera a que termines lo que estás haciendo
+  // (arrastrar un slider, tocar, escribir) y luego vuelve a comparar.
+  let syncPunteroActivo = false;
+  let syncUltimaInteraccion = 0;
+  let syncAvisoDiferidoTimer = null;
+  ['pointerdown', 'touchstart', 'mousedown'].forEach(ev => document.addEventListener(ev, () => {
+    syncPunteroActivo = true; syncUltimaInteraccion = Date.now();
+  }, { capture: true, passive: true }));
+  ['pointerup', 'pointercancel', 'touchend', 'touchcancel', 'mouseup', 'keydown', 'input'].forEach(ev => document.addEventListener(ev, () => {
+    if (ev !== 'keydown' && ev !== 'input') syncPunteroActivo = false;
+    syncUltimaInteraccion = Date.now();
+  }, { capture: true, passive: true }));
+
+  function usuarioInteractuando() {
+    const el = document.activeElement;
+    const escribiendo = el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !/^(button|checkbox|radio|range|submit)$/i.test(el.type)));
+    return syncPunteroActivo || escribiendo || Date.now() - syncUltimaInteraccion < 2500;
+  }
+
   function showDriveDataNotice(status, remoteState) {
     if (!remoteState || (status !== 'remote-newer' && status !== 'conflict')) return;
+    if (usuarioInteractuando()) {
+      clearTimeout(syncAvisoDiferidoTimer);
+      syncAvisoDiferidoTimer = setTimeout(() => requestDriveFreshnessCheck({ notify: true, force: true }), 4000);
+      return;
+    }
     const remoteInfo = getDataVersionInfo(remoteState);
     const versionKey = `${status}:${remoteInfo.versionId}:${remoteInfo.hash}`;
     if (lastAnnouncedSyncVersionId === versionKey || activeSyncAlertVersionId === versionKey) return;

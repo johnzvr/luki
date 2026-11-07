@@ -7997,6 +7997,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-cat-opt { display: flex; justify-content: space-between; align-items: center; text-align: left; font-family: var(--font-ui); font-size: 15px; font-weight: 500; color: var(--ink); background: var(--surface); border: 1px solid var(--line-hi); border-radius: 14px; padding: 10px 14px; cursor: pointer; }
 .ref-cat-opt.active { border-color: var(--ink); font-weight: 700; }
 .ref-cat-opt span { font-size: 12px; color: var(--ink-mute); font-weight: 500; }
+.ref-det-ajuste { font-size: 13px; color: var(--ink-dim); margin-top: 2px; }
 .ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
 </style>
 </head>
@@ -8465,7 +8466,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '366';
+  const LEDGER_BUILD = '367';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -15752,6 +15753,30 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     state.referenciasManual = {};
   }
 
+  // BUILD367 · Ajustes del ciclo (Reacomodar): valen solo para el ciclo actual.
+  // Las referencias base (modo Editar / Sugerir) se mantienen entre ciclos.
+  function ajustesCicloReferencias(crear = false) {
+    const reg = state.referenciasCiclo;
+    if (reg && typeof reg === 'object' && reg.ciclo === state.fechaInicioCiclo && reg.refs && typeof reg.refs === 'object') return reg.refs;
+    if (!crear) return {};
+    state.referenciasCiclo = { ciclo: state.fechaInicioCiclo, refs: {} };
+    return state.referenciasCiclo.refs;
+  }
+
+  function referenciaEfectivaDeCategoria(cat) {
+    const ajustes = ajustesCicloReferencias();
+    if (Object.prototype.hasOwnProperty.call(ajustes, cat)) {
+      const valor = Number(ajustes[cat]);
+      return Number.isFinite(valor) && valor > 0.005 ? redondearDinero(valor) : null;
+    }
+    return referenciaDeCategoria(cat);
+  }
+
+  function quitarAjusteCicloReferencia(cat) {
+    const ajustes = ajustesCicloReferencias();
+    if (Object.prototype.hasOwnProperty.call(ajustes, cat)) delete ajustes[cat];
+  }
+
   // Gasto real que pesa en el presupuesto: S y DS (DS+P la mitad), como el Gastado del Excel.
   // Fuera: redistribuciones, F / F+DS (Fondo), DS+C, A, adelantos asignados y proyectados.
   function movimientoCuentaEnReferencias(mov) {
@@ -15885,14 +15910,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const gasto = gastoPorCategoriaReferencias(state.log);
     const sugerencia = sugerenciaReferencias(disponible);
     const sugerido = referenciasEnModoSugerido();
-    const refDe = cat => sugerido ? (sugerencia.refs[cat] || null) : referenciaDeCategoria(cat);
-    const filas = categoriasVariablesReferencias().map((cat, orden) => ({
-      cat, orden, gastado: redondearDinero(gasto[cat] || 0), referencia: refDe(cat)
-    }));
-    // Orden estable: por referencia (mayor a menor); sin referencia al final.
+    const refDe = cat => sugerido ? (sugerencia.refs[cat] || null) : referenciaEfectivaDeCategoria(cat);
+    const baseDe = cat => sugerido ? (sugerencia.refs[cat] || null) : referenciaDeCategoria(cat);
+    const filas = categoriasVariablesReferencias().map((cat, orden) => {
+      const referencia = refDe(cat), base = baseDe(cat);
+      return {
+        cat, orden, gastado: redondearDinero(gasto[cat] || 0), referencia, base,
+        ajustada: Math.abs((referencia || 0) - (base || 0)) > 0.005 // BUILD367
+      };
+    });
+    // Orden estable: por referencia base (mayor a menor); sin referencia al final.
     filas.sort((a, b) => {
-      if (!!a.referencia !== !!b.referencia) return a.referencia ? -1 : 1;
-      if (a.referencia && b.referencia && b.referencia !== a.referencia) return b.referencia - a.referencia;
+      const ra = a.base || a.referencia || 0, rb = b.base || b.referencia || 0;
+      if (!!ra !== !!rb) return ra ? -1 : 1;
+      if (ra && rb && rb !== ra) return rb - ra;
       return a.orden - b.orden;
     });
     const suma = redondearDinero(filas.reduce((t, f) => t + (f.referencia || 0), 0));
@@ -15986,7 +16017,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
             + `<span class="ref-typ-med">Mediana <span class="ref-num">S/${fmt(tipico[f.cat] || 0)}</span></span>`
           : '<span>Aún no hay ciclos archivados con categorías.</span>'}</div>` : '';
         return `<div class="ref-erow-wrap${abierto ? ' open' : ''}"><div class="ref-erow"><span class="ref-name">${escapeHtml(f.cat)}</span>
-        <label class="ref-field"><span>S/</span><input type="text" inputmode="decimal" autocomplete="off" data-ref-cat="${escapeHtml(f.cat)}" value="${f.referencia ? f.referencia.toFixed(2) : ''}" placeholder="0.00" oninput="referenciaInput()" onchange="referenciaCambio(this)"></label>
+        <label class="ref-field"><span>S/</span><input type="text" inputmode="decimal" autocomplete="off" data-ref-cat="${escapeHtml(f.cat)}" data-ref-base="${f.base ? f.base.toFixed(2) : ''}" value="${f.base ? f.base.toFixed(2) : ''}" placeholder="0.00" oninput="referenciaInput()" onchange="referenciaCambio(this)"></label>
         <button type="button" class="ref-typ" data-ref-typ="${i}" onclick="toggleTipicoReferencia(this)">Típico<br><span class="ref-num">${Number.isFinite(tipico[f.cat]) ? 'S/' + fmt(tipico[f.cat]) : '—'}</span></button></div>${detalle}</div>`;
       }).join('');
       const usados = det.ciclos.map(c => c.etiqueta).join(', ');
@@ -16038,8 +16069,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     m.filas.forEach(f => { gastado[f.cat] = f.gastado; });
     let suma = 0;
     const pares = [];
+    const ajustes = ajustesCicloReferencias();
     document.querySelectorAll('#referenciasView input[data-ref-cat]').forEach(input => {
-      const v = leerMontoReferencia(input.value) || 0;
+      const cat = input.getAttribute('data-ref-cat');
+      const sinTocar = input.value === input.getAttribute('data-ref-base');
+      // BUILD367 · un campo sin tocar con ajuste del ciclo sigue contando con el ajuste.
+      const v = sinTocar && Object.prototype.hasOwnProperty.call(ajustes, cat)
+        ? (Number(ajustes[cat]) || 0) : (leerMontoReferencia(input.value) || 0);
       suma += v;
       pares.push([v, gastado[input.getAttribute('data-ref-cat')] || 0]);
     });
@@ -16056,10 +16092,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (!categoriasVariablesReferencias().includes(cat)) return;
     const valor = leerMontoReferencia(input.value);
     if (referenciasEnModoSugerido()) guardarSugerenciaReferencias(modeloReferencias().sugerencia.refs); // BUILD364
+    const base = referenciaDeCategoria(cat);
     const refs = referenciasGuardadas();
     if (valor) refs[cat] = valor; else delete refs[cat];
     referenciasManuales()[cat] = true; // BUILD364 · ya no se sobrescribe solo
+    // BUILD367 · si cambió la base, el ajuste de este ciclo se reemplaza por lo escrito.
+    if (Math.abs((valor || 0) - (base || 0)) > 0.005) quitarAjusteCicloReferencia(cat);
     input.value = valor ? valor.toFixed(2) : '';
+    input.setAttribute('data-ref-base', input.value);
     saveState({ markModified: true, sync: true });
   }
 
@@ -16082,6 +16122,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const refs = modeloReferencias().sugerencia.refs;
     if (!Object.keys(refs).length) { toast('Aún no hay ciclos con gasto para sugerir'); return; }
     guardarSugerenciaReferencias(refs);
+    state.referenciasCiclo = null; // BUILD367 · la sugerencia reemplaza también los ajustes del ciclo
     saveState({ markModified: true, sync: true });
     renderReferencias();
     requestAnimationFrame(updateViewHeight);
@@ -16130,6 +16171,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     openModal(`
       <h2>${escapeHtml(cat)}</h2>
       <div class="ref-det-total"><span class="ref-amt"><b>S/${fmt(fila ? fila.gastado : 0)}</b> / ${fila && fila.referencia ? 'S/' + fmt(fila.referencia) : 'sin referencia'}</span></div>
+      ${fila && fila.ajustada ? `<div class="ref-det-ajuste">Ajustada este ciclo: base ${fila.base ? 'S/' + fmt(fila.base) : 'sin referencia'}</div>` : ''}
       <p class="ref-det-hint">Toca un movimiento para cambiar su categoría.</p>
       <div class="ref-movs">${lista}</div>
       <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal()">Cerrar</button></div>
@@ -16255,19 +16297,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       cambios[o.cat] = redondearDinero(o.referencia - exceso);
     } else return;
     if (referenciasEnModoSugerido()) guardarSugerenciaReferencias(plan.m.sugerencia.refs);
-    const refs = referenciasGuardadas();
-    const manual = referenciasManuales();
-    refs[cat] = redondearDinero(fila.gastado);
-    manual[cat] = true;
-    Object.keys(cambios).forEach(c => {
-      if (cambios[c] > 0.005) refs[c] = cambios[c]; else delete refs[c];
-      manual[c] = true;
-    });
+    // BUILD367 · solo para este ciclo: la base no cambia.
+    const ajustes = ajustesCicloReferencias(true);
+    ajustes[cat] = redondearDinero(fila.gastado);
+    Object.keys(cambios).forEach(c => { ajustes[c] = Math.max(0, cambios[c]); });
     saveState({ markModified: true, sync: true });
     closeModal();
     renderReferencias();
     requestAnimationFrame(updateViewHeight);
-    toast(`${cat} · referencia S/ ${fmt(fila.gastado)}`);
+    toast(`${cat} · S/ ${fmt(fila.gastado)} solo este ciclo`);
   }
 
   function toggleReferenciasEdicion() {

@@ -8020,6 +8020,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-field-big { width: 100%; margin: 12px 0 4px; padding: 10px 12px; }
 .ref-field-big span, .ref-field-big input { font-size: 20px; }
 .hero-meta-reducida { font-weight: 400; color: var(--ink-dim); display: inline-block; }
+.ref-quedan { margin-top: 3px; }
 .ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
 </style>
 </head>
@@ -8488,7 +8489,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '369';
+  const LEDGER_BUILD = '370';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16046,6 +16047,16 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   // BUILD368 · "Ahorro: S/ meta separado · hasta S/ meta + sin asignar". Lo que pasó de su
   // referencia ya salió del sin asignar; si lo supera, el ahorro bajaría por debajo de la meta.
+  // BUILD370 · puente con Inicio: lo que queda según tus referencias y el Gastable real.
+  // El Gastable sale del mismo modelo que el arco de Inicio (Disponible − Meta).
+  function gastableInicioReferencias() {
+    return redondearDinero(budgetArcModel(state).remaining);
+  }
+
+  function lineaQuedanReferenciasHtml(suma, gastadoVariables, oculto = false) {
+    return `Te quedan ${montoPrivadoReferencias(redondearDinero(suma - gastadoVariables), oculto)} según tus referencias · Gastable ${montoPrivadoReferencias(gastableInicioReferencias(), oculto)}`;
+  }
+
   function lineaAhorroReferenciasHtml(ahorro, oculto = false, meta = 0) {
     const extra = redondearDinero(ahorro - meta);
     const base = `Ahorro: ${montoPrivadoReferencias(meta, oculto)} separado`;
@@ -16082,6 +16093,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.disponible)}</div>
         <div class="ref-subline" id="refSubline">${lineaReferenciasHtml(m.suma, m.disponible, oculto)}</div>
         <div class="ref-subline ref-ahorro" id="refAhorro">${lineaAhorroReferenciasHtml(m.ahorro, oculto, m.meta)}</div>
+        <div class="ref-subline ref-quedan" id="refQuedan">${lineaQuedanReferenciasHtml(m.suma, m.filas.reduce((t, f) => t + f.gastado, 0), oculto)}</div>
         ${m.sugerencia.faltante > 0.005 ? `<div class="ref-aviso">Tu meta implica ${montoPrivadoReferencias(m.sugerencia.faltante, oculto)} menos que un ciclo típico</div>` : ''}
         ${referenciasDesgloseAbierto ? `<div class="ref-calc" onclick="event.stopPropagation()">
           <div class="ref-calc-row"><span>Inicio del ciclo</span>${montoPrivadoReferencias(m.inicio, oculto)}</div>
@@ -16284,6 +16296,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (sub) sub.innerHTML = lineaReferenciasHtml(suma, m.disponible, oculto);
     const ah = document.getElementById('refAhorro');
     if (ah) ah.innerHTML = lineaAhorroReferenciasHtml(ahorroProyectadoReferencias(m.meta, m.disponible, pares), oculto, m.meta);
+    const qu = document.getElementById('refQuedan');
+    if (qu) qu.innerHTML = lineaQuedanReferenciasHtml(suma, m.filas.reduce((t, f) => t + f.gastado, 0), oculto);
   }
 
   function soltarSliderReferencia(slider) {

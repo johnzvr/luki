@@ -8500,7 +8500,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '371';
+  const LEDGER_BUILD = '372';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -13658,6 +13658,45 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return getArchivedCycles().find(ciclo => String(ciclo?.id || '') === ref || String(ciclo?.fechaInicio || '') === ref) || null;
   }
 
+  // BUILD372 · cambiar la categoría de un movimiento de un ciclo archivado (desde Ver todos).
+  // La categoría no altera montos, deuda ni totales (spec §7.1); sí cambia Típicos y Recurrentes.
+  function chipCategoriaArchivada(mov, ref, index) {
+    if (!mov || mov.etiqueta === 'recalcula' || esMovimientoProyectado(mov)) return '';
+    const categoria = categoriaMovimiento(mov);
+    return `<button type="button" class="movement-category-chip${categoria ? '' : ' is-empty'}" onpointerdown="event.stopPropagation()"
+      data-ref-ciclo="${ref}" data-ref-idx="${index}" onclick="event.stopPropagation(); abrirCategoriaArchivada(this)">${escapeHtml(categoria || '+ Categoría')}</button>`;
+  }
+
+  function abrirCategoriaArchivada(chip) {
+    const ciclo = cicloArchivadoPorReferencia(chip.dataset.refCiclo);
+    const mov = ciclo && Array.isArray(ciclo.movimientos) ? ciclo.movimientos[Number(chip.dataset.refIdx)] : null;
+    if (!mov) { toast('No se encontró el movimiento', true); return; }
+    window.__chipCategoriaArchivada = chip;
+    const actual = categoriaMovimiento(mov);
+    openNestedModal(`
+      <h2>Cambiar <span class="accent">categoría</span></h2>
+      <p class="modal-sub">${escapeHtml(mov.detalle || 'Movimiento')} · S/${fmt(mov.monto)}</p>
+      <div class="ref-cat-list">${MOVEMENT_CATEGORIES.map(cat => `<button type="button" class="ref-cat-opt${cat === actual ? ' active' : ''}" data-ref-nueva="${escapeHtml(cat)}" onclick="guardarCategoriaArchivada(this.dataset.refNueva)">${escapeHtml(cat)}</button>`).join('')}</div>
+      <div class="modal-buttons"><button class="btn-secondary" onclick="closeNestedModal()">Cancelar</button></div>
+    `);
+  }
+
+  function guardarCategoriaArchivada(nueva) {
+    const chip = window.__chipCategoriaArchivada;
+    closeNestedModal();
+    if (!chip || !MOVEMENT_CATEGORIES.includes(nueva)) return;
+    const ciclo = cicloArchivadoPorReferencia(chip.dataset.refCiclo);
+    const mov = ciclo && Array.isArray(ciclo.movimientos) ? ciclo.movimientos[Number(chip.dataset.refIdx)] : null;
+    if (!mov || mov.categoria === nueva) return;
+    mov.categoria = nueva;
+    recurrentesCache = { firma: '', lista: [] };
+    referenciasTipicoCache = null;
+    chip.textContent = nueva;
+    chip.classList.remove('is-empty');
+    render();
+    toast(`Movido a ${nueva}`);
+  }
+
   function referenciaCicloArchivado(ciclo) {
     return encodeURIComponent(String(ciclo?.id || ciclo?.fechaInicio || ''));
   }
@@ -14966,7 +15005,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
               <div class="log-dot ${dotType}">${dotLabel}</div>
               <div class="log-info">
                 <div class="log-detail">${escapeHtml(mov.detalle || 'Sin detalle')}</div>
-                <div class="log-meta">${esProyectado ? '<span class="projected-status">Reservado</span>' + metaMonedaProyectado : ''}${badge}${esMovimientoTarjeta(mov) ? badgeBancoMovimiento(mov) + badgePagoTarjeta(grupoPago) : badgeYapeMovimiento(mov)}${esActual ? chipCategoriaMovimiento(mov, originalIdx) : chipCategoriaMovimiento(mov, -1)}${esProyectado ? '' : `<span class="log-date">${escapeHtml(mov.fecha)}</span>`}</div>
+                <div class="log-meta">${esProyectado ? '<span class="projected-status">Reservado</span>' + metaMonedaProyectado : ''}${badge}${esMovimientoTarjeta(mov) ? badgeBancoMovimiento(mov) + badgePagoTarjeta(grupoPago) : badgeYapeMovimiento(mov)}${esActual ? chipCategoriaMovimiento(mov, originalIdx) : (entrada.ciclo ? chipCategoriaArchivada(mov, referenciaCicloArchivado(entrada.ciclo), entrada.index) : chipCategoriaMovimiento(mov, -1))}${esProyectado ? '' : `<span class="log-date">${escapeHtml(mov.fecha)}</span>`}</div>
               </div>
             </div>
             <div class="log-right"><div class="log-amount">${logAmountText(mov)}</div></div>
@@ -16878,7 +16917,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (movimientos.length === 0) {
       listaHTML = `<div class="all-empty">${ciclo.detalleDisponible === false ? 'Esta versión solo conserva el resumen del ciclo.' : 'Este ciclo no tuvo movimientos.'}</div>`;
     } else {
-      movimientos.slice().reverse().forEach(mov => {
+      const refCiclo = referenciaCicloArchivado(ciclo); // BUILD372
+      movimientos.slice().reverse().forEach((mov, k) => {
+        const idxOriginal = movimientos.length - 1 - k;
         let dotType = normalizarTipoMovimiento(mov.tipo);
         let dotLabel = etiquetaTipoMovimiento(mov);
         if (mov.etiqueta === 'recalcula') { dotType = 'RC'; dotLabel = 'RC'; }
@@ -16890,7 +16931,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
               <div class="log-dot ${dotType}">${dotLabel}</div>
               <div class="log-info">
                 <div class="log-detail">${escapeHtml(mov.detalle || 'Sin detalle')}</div>
-                <div class="log-meta">${badge}<span>${escapeHtml(mov.fecha || '')}</span></div>
+                <div class="log-meta">${badge}${chipCategoriaArchivada(mov, refCiclo, idxOriginal)}<span>${escapeHtml(mov.fecha || '')}</span></div>
               </div>
             </div>
             <div class="log-right"><div class="log-amount">${logAmountText(mov)}</div></div>

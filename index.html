@@ -7962,6 +7962,22 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-actions { display: flex; gap: 8px; }
 .ref-aviso { font-size: 13px; color: var(--ink-dim); margin-top: 6px; }
 .ref-aviso .ref-num { color: var(--ink-dim); }
+.ref-ahorro { margin-top: 3px; }
+.ref-typ { background: none; border: 0; padding: 0; font-family: var(--font-ui); cursor: pointer; }
+.ref-erow-wrap.open .ref-erow { border-bottom: 0; padding-bottom: 6px; }
+.ref-erow-wrap.open .ref-typ { color: var(--ink); }
+.ref-typ-det { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink-dim); padding: 0 0 11px; border-bottom: 1px solid var(--line); }
+.ref-typ-det .ref-num { font-size: 12.5px; color: var(--ink); }
+.ref-typ-med { margin-left: auto; font-weight: 600; color: var(--ink); }
+.ref-exceso { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13.5px; color: var(--ink-dim); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 9px 10px 9px 14px; margin: 8px 0; }
+.ref-exceso .ref-num { font-size: 13.5px; }
+.ref-exceso-btn { font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--ink); background: transparent; border: 1px solid var(--line-hi); border-radius: 14px; padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+.ref-ops { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
+.ref-op { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; font-family: var(--font-ui); background: var(--surface); color: var(--ink); border: 1px solid var(--line-hi); border-radius: 14px; padding: 11px 14px; cursor: pointer; }
+.ref-op:disabled { cursor: default; opacity: .55; }
+.ref-op-t { font-size: 15px; font-weight: 600; }
+.ref-op-s { font-size: 12.5px; color: var(--ink-dim); }
+.ref-op-falta { font-size: 12.5px; color: var(--ink); font-weight: 600; }
 .ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
 </style>
 </head>
@@ -8430,7 +8446,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '364';
+  const LEDGER_BUILD = '365';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -8682,6 +8698,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     balanceHidden = !balanceHidden;
     try { localStorage.setItem('ledger-balance-hidden-v1', balanceHidden ? '1' : '0'); } catch(e) {}
     applyBalancePrivacy();
+    try { renderReferencias(); } catch(e) {} // BUILD365 · Referencias también se oculta
   }
 
   function applyBalancePrivacy() {
@@ -15645,6 +15662,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   let referenciasEditando = false;
   let referenciasDesgloseAbierto = false;
   let referenciasFijosAbierto = false;
+  let referenciasTipicoAbierto = null; // BUILD365
 
   function categoriasVariablesReferencias() {
     return MOVEMENT_CATEGORIES.filter(cat => !REFERENCIAS_FIJAS.includes(cat));
@@ -15717,12 +15735,25 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return afectaPresupuestoSalarial(mov);
   }
 
+  // BUILD365 · categoría canónica: tolera mayúsculas, tildes, espacios y nombres cortos
+  // ("Hogar" → "Hogar / departamento", "Salud" → "Salud / personal").
+  function categoriaCanonicaReferencias(valor) {
+    const crudo = normalizarCategoriaMovimiento(valor);
+    if (!crudo) return '';
+    if (MOVEMENT_CATEGORIES.includes(crudo)) return crudo;
+    const norm = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s*\/\s*/g, '/').replace(/\s+/g, ' ').trim();
+    const buscado = norm(crudo);
+    const exacta = MOVEMENT_CATEGORIES.find(cat => norm(cat) === buscado);
+    if (exacta) return exacta;
+    const corta = MOVEMENT_CATEGORIES.filter(cat => norm(cat).split('/')[0] === buscado);
+    return corta.length === 1 ? corta[0] : crudo;
+  }
+
   function gastoPorCategoriaReferencias(movimientos) {
     const totales = {};
     (Array.isArray(movimientos) ? movimientos : []).forEach(mov => {
       if (!movimientoCuentaEnReferencias(mov)) return;
-      const cat = categoriaMovimiento(mov);
-      if (!cat) return;
+      const cat = categoriaCanonicaReferencias(mov.categoria) || '__sin__';
       totales[cat] = redondearDinero((totales[cat] || 0) + impactoPresupuestoMovimiento(mov));
     });
     return totales;
@@ -15733,7 +15764,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function cargosFijosReferencias() {
     const items = [];
     (Array.isArray(state.log) ? state.log : []).forEach(mov => {
-      const cat = categoriaMovimiento(mov);
+      const cat = categoriaCanonicaReferencias(mov?.categoria); // BUILD365
       if (!REFERENCIAS_FIJAS.includes(cat)) return;
       if (esMovimientoProyectado(mov)) {
         if (mov.etiqueta === 'recalcula') return;
@@ -15763,19 +15794,48 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   // Valor "Típico": mediana del gasto por categoría en los últimos 3 ciclos archivados.
+  // BUILD365 · Solo cuentan ciclos archivados completos (≥ 20 días) cuyo gasto esté
+  // categorizado al menos en un 60 %. Los ciclos de antes de las categorías (ago 2026)
+  // tenían todo "sin categoría" y metían ceros en la mediana.
+  const REFERENCIAS_MIN_DIAS_CICLO = 20;
+  const REFERENCIAS_MIN_CATEGORIZADO = 0.6;
+  let referenciasTipicoCache = null;
+
+  function tipicoDetalleReferencias() {
+    const llave = (Array.isArray(state.historialCiclos) ? state.historialCiclos.map(c => (c?.id || '') + ':' + (c?.movimientos || []).reduce((t, m) => t + (Number(m?.monto) || 0) + (m?.categoria || '').length, 0)).join('|') : '');
+    if (referenciasTipicoCache && referenciasTipicoCache.llave === llave) return referenciasTipicoCache;
+    const usados = [];
+    let omitidos = 0;
+    for (const c of getArchivedCycles()) {
+      if (usados.length >= 3) break;
+      if (!c || !Array.isArray(c.movimientos) || c.detalleDisponible === false) { omitidos++; continue; }
+      const totales = gastoPorCategoriaReferencias(c.movimientos);
+      const total = Object.values(totales).reduce((t, v) => t + v, 0);
+      const sinCategoria = Number(totales.__sin__) || 0;
+      const inicio = c.fechaInicio ? inicioDelDia(c.fechaInicio) : null;
+      const fin = c.fechaFin ? inicioDelDia(c.fechaFin) : null;
+      const dias = Number(c.dias) || (inicio && fin ? Math.round((fin - inicio) / MS_DIA) + 1 : 0);
+      if (total <= 0.005 || dias < REFERENCIAS_MIN_DIAS_CICLO || (total - sinCategoria) / total < REFERENCIAS_MIN_CATEGORIZADO) { omitidos++; continue; }
+      usados.push({
+        etiqueta: inicio && !isNaN(inicio) ? formatFecha(inicio) : 'ciclo',
+        totales, sinCategoria: redondearDinero(sinCategoria)
+      });
+    }
+    const tipico = {}, valores = {};
+    if (usados.length) {
+      categoriasVariablesReferencias().forEach(cat => {
+        valores[cat] = usados.map(u => Number(u.totales[cat]) || 0);
+        const orden = valores[cat].slice().sort((a, b) => a - b);
+        const mitad = Math.floor(orden.length / 2);
+        tipico[cat] = redondearDinero(orden.length % 2 ? orden[mitad] : (orden[mitad - 1] + orden[mitad]) / 2);
+      });
+    }
+    referenciasTipicoCache = { llave, ciclos: usados, valores, tipico, omitidos };
+    return referenciasTipicoCache;
+  }
+
   function tipicoPorCategoriaReferencias() {
-    const ciclos = getArchivedCycles()
-      .filter(c => c && Array.isArray(c.movimientos) && c.detalleDisponible !== false)
-      .slice(0, 3);
-    const porCiclo = ciclos.map(c => gastoPorCategoriaReferencias(c.movimientos));
-    const tipico = {};
-    if (!porCiclo.length) return tipico;
-    categoriasVariablesReferencias().forEach(cat => {
-      const valores = porCiclo.map(t => Number(t[cat]) || 0).sort((a, b) => a - b);
-      const mitad = Math.floor(valores.length / 2);
-      tipico[cat] = redondearDinero(valores.length % 2 ? valores[mitad] : (valores[mitad - 1] + valores[mitad]) / 2);
-    });
-    return tipico;
+    return tipicoDetalleReferencias().tipico;
   }
 
   function avanceCicloReferencias() {
@@ -15809,13 +15869,43 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       return a.orden - b.orden;
     });
     const suma = redondearDinero(filas.reduce((t, f) => t + (f.referencia || 0), 0));
-    return { inicio, meta, fijos, adelantos, disponible, filas, suma, sugerencia, sugerido };
+    // BUILD365 · Ahorro si sigues las referencias = Meta + Disponible − lo que sale de cada
+    // categoría (su referencia, o lo gastado si ya la pasó). Si dejas un exceso, baja el ahorro.
+    const ahorro = ahorroProyectadoReferencias(meta, disponible, filas.map(f => [f.referencia, f.gastado]));
+    const aceptados = excesosAceptadosReferencias();
+    const excesos = filas
+      .filter(f => f.referencia && f.gastado - f.referencia > 0.005)
+      .filter(f => !(Number(aceptados[f.cat]) >= f.gastado - 0.005))
+      .map(f => ({ cat: f.cat, exceso: redondearDinero(f.gastado - f.referencia) }));
+    return { inicio, meta, fijos, adelantos, disponible, filas, suma, sugerencia, sugerido, ahorro, excesos };
   }
 
-  function lineaReferenciasHtml(suma, disponible) {
+  function ahorroProyectadoReferencias(meta, disponible, pares) {
+    const sale = pares.reduce((t, [ref, gastado]) => t + Math.max(Number(ref) || 0, Number(gastado) || 0), 0);
+    return redondearDinero(meta + disponible - sale);
+  }
+
+  // BUILD365 · "Dejarlo así" por categoría en este ciclo: guarda lo gastado al aceptarlo;
+  // si después se gasta más, el aviso vuelve.
+  function excesosAceptadosReferencias() {
+    const reg = state.referenciasExcesosAceptados;
+    if (!reg || typeof reg !== 'object' || reg.ciclo !== state.fechaInicioCiclo || !reg.cats || typeof reg.cats !== 'object') return {};
+    return reg.cats;
+  }
+
+  function montoPrivadoReferencias(valor, oculto) {
+    const n = Number(valor) || 0;
+    return `<span class="ref-num">${oculto ? 'S/ ****' : (n < 0 ? '−' : '') + 'S/' + fmt(Math.abs(n))}</span>`;
+  }
+
+  function lineaReferenciasHtml(suma, disponible, oculto = false) {
     const dif = redondearDinero(disponible - suma);
-    return `Referencias <span class="ref-num">S/${fmt(suma)}</span> · `
-      + (dif < 0 ? `Excedes <span class="ref-num">S/${fmt(-dif)}</span>` : `Holgura <span class="ref-num">S/${fmt(dif)}</span>`);
+    return `Referencias ${montoPrivadoReferencias(suma, oculto)} · `
+      + (dif < 0 ? `Excedes ${montoPrivadoReferencias(-dif, oculto)}` : `Holgura ${montoPrivadoReferencias(dif, oculto)}`);
+  }
+
+  function lineaAhorroReferenciasHtml(ahorro, oculto = false) {
+    return `Ahorro si sigues las referencias: ${montoPrivadoReferencias(ahorro, oculto)}`;
   }
 
   function renderReferencias() {
@@ -15844,29 +15934,41 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       <div class="ref-summary${referenciasDesgloseAbierto ? ' open' : ''}" onclick="toggleReferenciasDesglose(event)">
         <div class="ref-eyebrow"><span>Disponible variable</span>${chev}</div>
         <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.disponible)}</div>
-        <div class="ref-subline" id="refSubline">${lineaReferenciasHtml(m.suma, m.disponible)}</div>
-        ${m.sugerencia.faltante > 0.005 ? `<div class="ref-aviso">Tu meta implica <span class="ref-num">S/${fmt(m.sugerencia.faltante)}</span> menos que un ciclo típico</div>` : ''}
+        <div class="ref-subline" id="refSubline">${lineaReferenciasHtml(m.suma, m.disponible, oculto)}</div>
+        <div class="ref-subline ref-ahorro" id="refAhorro">${lineaAhorroReferenciasHtml(m.ahorro, oculto)}</div>
+        ${m.sugerencia.faltante > 0.005 ? `<div class="ref-aviso">Tu meta implica ${montoPrivadoReferencias(m.sugerencia.faltante, oculto)} menos que un ciclo típico</div>` : ''}
         ${referenciasDesgloseAbierto ? `<div class="ref-calc" onclick="event.stopPropagation()">
-          <div class="ref-calc-row"><span>Inicio del ciclo</span><span class="ref-num">S/${fmt(m.inicio)}</span></div>
-          <div class="ref-calc-row"><span>− Meta de ahorro</span><span class="ref-num">S/${fmt(m.meta)}</span></div>
-          <div class="ref-calc-row link${referenciasFijosAbierto ? ' open' : ''}" onclick="toggleReferenciasFijos()"><span>− Fijos</span><span class="ref-num">S/${fmt(m.fijos.total)}</span></div>
+          <div class="ref-calc-row"><span>Inicio del ciclo</span>${montoPrivadoReferencias(m.inicio, oculto)}</div>
+          <div class="ref-calc-row"><span>− Meta de ahorro</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
+          <div class="ref-calc-row link${referenciasFijosAbierto ? ' open' : ''}" onclick="toggleReferenciasFijos()"><span>− Fijos</span>${montoPrivadoReferencias(m.fijos.total, oculto)}</div>
           ${referenciasFijosAbierto ? `<div class="ref-fijos">${fijosHtml}</div>` : ''}
-          ${m.adelantos > 0.005 ? `<div class="ref-calc-row"><span>− Adelantos</span><span class="ref-num">S/${fmt(m.adelantos)}</span></div>` : ''}
-          <div class="ref-calc-row total"><span>Disponible variable</span><span class="ref-num">S/${fmt(m.disponible)}</span></div>
+          ${m.adelantos > 0.005 ? `<div class="ref-calc-row"><span>− Adelantos</span>${montoPrivadoReferencias(m.adelantos, oculto)}</div>` : ''}
+          <div class="ref-calc-row total"><span>Disponible variable</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
         </div>` : ''}
       </div>
       <div class="ref-head"><span class="ref-title">${referenciasEditando ? 'Editar referencias' : 'Por categoría'}</span>
         <span class="ref-actions">${referenciasEditando ? '<button type="button" class="ref-btn" onclick="sugerirReferencias()">Sugerir</button>' : ''}<button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button></span></div>`;
 
     if (referenciasEditando) {
-      const tipico = tipicoPorCategoriaReferencias();
-      html += m.filas.map(f => `<div class="ref-erow"><span class="ref-name">${escapeHtml(f.cat)}</span>
+      const det = tipicoDetalleReferencias();
+      const tipico = det.tipico;
+      html += m.filas.map((f, i) => {
+        const abierto = referenciasTipicoAbierto === f.cat;
+        const detalle = abierto ? `<div class="ref-typ-det">${det.ciclos.length
+          ? det.ciclos.map((c, j) => `<span><span class="ref-typ-ciclo">${escapeHtml(c.etiqueta)}</span> <span class="ref-num">S/${fmt(det.valores[f.cat]?.[j] || 0)}</span></span>`).join('')
+            + `<span class="ref-typ-med">Mediana <span class="ref-num">S/${fmt(tipico[f.cat] || 0)}</span></span>`
+          : '<span>Aún no hay ciclos archivados con categorías.</span>'}</div>` : '';
+        return `<div class="ref-erow-wrap${abierto ? ' open' : ''}"><div class="ref-erow"><span class="ref-name">${escapeHtml(f.cat)}</span>
         <label class="ref-field"><span>S/</span><input type="text" inputmode="decimal" autocomplete="off" data-ref-cat="${escapeHtml(f.cat)}" value="${f.referencia ? f.referencia.toFixed(2) : ''}" placeholder="0.00" oninput="referenciaInput()" onchange="referenciaCambio(this)"></label>
-        <span class="ref-typ">Típico<br><span class="ref-num">${Number.isFinite(tipico[f.cat]) ? 'S/' + fmt(tipico[f.cat]) : '—'}</span></span></div>`).join('');
-      html += '<div class="ref-hint">Típico: mediana de lo gastado en cada categoría en los últimos 3 ciclos. Deja vacío para quitar la referencia.</div>';
+        <button type="button" class="ref-typ" data-ref-typ="${i}" onclick="toggleTipicoReferencia(this)">Típico<br><span class="ref-num">${Number.isFinite(tipico[f.cat]) ? 'S/' + fmt(tipico[f.cat]) : '—'}</span></button></div>${detalle}</div>`;
+      }).join('');
+      const usados = det.ciclos.map(c => c.etiqueta).join(', ');
+      html += `<div class="ref-hint">Típico: mediana de lo gastado en cada categoría en los últimos 3 ciclos completos con categorías${usados ? ` (inician ${escapeHtml(usados)})` : ''}. Toca Típico para ver los 3 valores.${det.omitidos ? ` ${det.omitidos === 1 ? 'Se omitió 1 ciclo sin categorías o incompleto.' : 'Se omitieron ' + det.omitidos + ' ciclos sin categorías o incompletos.'}` : ''} Deja vacío para quitar la referencia.</div>`;
     } else {
       const avance = avanceCicloReferencias();
       const marca = avance ? Math.max(0, Math.min(100, avance.fraccion * 100)) : null;
+      // BUILD365 · aviso no intrusivo por categoría que pasó su referencia.
+      html += m.excesos.map(x => `<div class="ref-exceso"><span>${escapeHtml(x.cat)} superó por <span class="ref-num">S/${fmt(x.exceso)}</span></span><button type="button" class="ref-exceso-btn" data-ref-exceso="${escapeHtml(x.cat)}" onclick="abrirReacomodoReferencia(this.dataset.refExceso)">Reacomodar</button></div>`).join('');
       html += m.filas.map(f => {
         if (!f.referencia) {
           return `<div class="ref-row off"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>S/${fmt(f.gastado)}</b> / —</span></div></div>`;
@@ -15904,12 +16006,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   // Mientras escribe: solo actualiza la línea del resumen (no guarda).
   function referenciaInput() {
     const m = modeloReferencias();
+    const oculto = typeof balanceHidden !== 'undefined' && balanceHidden;
+    const gastado = {};
+    m.filas.forEach(f => { gastado[f.cat] = f.gastado; });
     let suma = 0;
+    const pares = [];
     document.querySelectorAll('#referenciasView input[data-ref-cat]').forEach(input => {
-      suma += leerMontoReferencia(input.value) || 0;
+      const v = leerMontoReferencia(input.value) || 0;
+      suma += v;
+      pares.push([v, gastado[input.getAttribute('data-ref-cat')] || 0]);
     });
     const sub = document.getElementById('refSubline');
-    if (sub) sub.innerHTML = lineaReferenciasHtml(redondearDinero(suma), m.disponible);
+    if (sub) sub.innerHTML = lineaReferenciasHtml(redondearDinero(suma), m.disponible, oculto);
+    const ah = document.getElementById('refAhorro');
+    if (ah) ah.innerHTML = lineaAhorroReferenciasHtml(ahorroProyectadoReferencias(m.meta, m.disponible, pares), oculto);
   }
 
   // Al salir del campo: guarda esa referencia (es un cambio de datos, se sincroniza).
@@ -15948,6 +16058,126 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     saveState({ markModified: true, sync: true });
     renderReferencias();
     requestAnimationFrame(updateViewHeight);
+  }
+
+  function toggleTipicoReferencia(btn) {
+    const fila = btn && btn.closest('.ref-erow');
+    const cat = fila && fila.querySelector('input[data-ref-cat]')?.getAttribute('data-ref-cat');
+    const activo = document.activeElement;
+    if (activo && activo.matches && activo.matches('#referenciasView input[data-ref-cat]')) { referenciaCambio(activo); activo.blur(); }
+    referenciasTipicoAbierto = referenciasTipicoAbierto === cat ? null : cat;
+    renderReferencias();
+    requestAnimationFrame(updateViewHeight);
+  }
+
+  // ---------- BUILD365 · Reacomodar un exceso ----------
+  // Ninguna referencia queda por debajo de lo ya gastado. Si una opción no alcanza, dice cuánto falta.
+  function planReacomodoReferencia(cat) {
+    const m = modeloReferencias();
+    const fila = m.filas.find(f => f.cat === cat);
+    if (!fila || !fila.referencia) return null;
+    const exceso = redondearDinero(fila.gastado - fila.referencia);
+    if (exceso <= 0.005) return null;
+    const holgura = Math.max(0, redondearDinero(m.disponible - m.suma));
+    const otras = m.filas
+      .filter(f => f.cat !== cat && f.referencia)
+      .map(f => ({ cat: f.cat, referencia: f.referencia, queda: Math.max(0, redondearDinero(f.referencia - f.gastado)) }));
+    const quedaTotal = redondearDinero(otras.reduce((t, o) => t + o.queda, 0));
+    return { m, fila, exceso, holgura, otras, quedaTotal };
+  }
+
+  function faltaReacomodoHtml(disponible, exceso) {
+    const falta = redondearDinero(exceso - disponible);
+    return falta > 0.005 ? `<span class="ref-op-falta">No alcanza · faltan S/${fmt(falta)}</span>` : '';
+  }
+
+  function abrirReacomodoReferencia(cat, elegir = false) {
+    const plan = planReacomodoReferencia(cat);
+    if (!plan) { closeModal(); renderReferencias(); return; }
+    const { exceso, holgura, otras, quedaTotal } = plan;
+    const catAttr = escapeHtml(cat);
+    if (elegir) {
+      openModal(`
+        <h2>Quitar de <span class="accent">otra categoría</span></h2>
+        <p class="modal-sub">${escapeHtml(cat)} necesita S/${fmt(exceso)}. Elige de dónde sale; cada una muestra lo que le queda.</p>
+        <div class="ref-ops">${otras.length ? otras.map(o => {
+          const alcanza = o.queda + 0.005 >= exceso;
+          return `<button type="button" class="ref-op" ${alcanza ? '' : 'disabled'} data-ref-cat="${catAttr}" data-ref-desde="${escapeHtml(o.cat)}" onclick="aplicarReacomodoReferencia(this.dataset.refCat, 'una', this.dataset.refDesde)">
+            <span class="ref-op-t">${escapeHtml(o.cat)}</span><span class="ref-op-s">Le quedan S/${fmt(o.queda)}</span>${alcanza ? '' : faltaReacomodoHtml(o.queda, exceso)}</button>`;
+        }).join('') : '<p class="modal-sub">No hay otras categorías con referencia.</p>'}</div>
+        <div class="modal-buttons"><button class="btn-secondary" data-ref-cat="${catAttr}" onclick="abrirReacomodoReferencia(this.dataset.refCat)">Volver</button></div>
+      `);
+      return;
+    }
+    const okHolgura = holgura + 0.005 >= exceso;
+    const okRepartir = quedaTotal + 0.005 >= exceso;
+    openModal(`
+      <h2>Reacomodar <span class="accent">${escapeHtml(cat)}</span></h2>
+      <p class="modal-sub">Superó su referencia por S/${fmt(exceso)}. ¿De dónde lo cubres?</p>
+      <div class="ref-ops">
+        <button type="button" class="ref-op" ${okHolgura ? '' : 'disabled'} data-ref-cat="${catAttr}" onclick="aplicarReacomodoReferencia(this.dataset.refCat, 'holgura')">
+          <span class="ref-op-t">Tomar de la holgura</span><span class="ref-op-s">Holgura S/${fmt(holgura)}</span>${okHolgura ? '' : faltaReacomodoHtml(holgura, exceso)}</button>
+        <button type="button" class="ref-op" ${okRepartir ? '' : 'disabled'} data-ref-cat="${catAttr}" onclick="aplicarReacomodoReferencia(this.dataset.refCat, 'repartir')">
+          <span class="ref-op-t">Repartir entre las demás</span><span class="ref-op-s">En proporción a lo que les queda · S/${fmt(quedaTotal)}</span>${okRepartir ? '' : faltaReacomodoHtml(quedaTotal, exceso)}</button>
+        <button type="button" class="ref-op" data-ref-cat="${catAttr}" onclick="abrirReacomodoReferencia(this.dataset.refCat, true)">
+          <span class="ref-op-t">Quitar de una categoría ›</span><span class="ref-op-s">Eliges cuál</span></button>
+        <button type="button" class="ref-op" data-ref-cat="${catAttr}" onclick="aplicarReacomodoReferencia(this.dataset.refCat, 'dejar')">
+          <span class="ref-op-t">Dejarlo así</span><span class="ref-op-s">Reduce el ahorro proyectado en S/${fmt(exceso)}</span></button>
+      </div>
+      <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal()">Cancelar</button></div>
+    `);
+  }
+
+  function aplicarReacomodoReferencia(cat, modo, desde) {
+    const plan = planReacomodoReferencia(cat);
+    if (!plan) { closeModal(); renderReferencias(); return; }
+    const { exceso, holgura, otras, quedaTotal, fila } = plan;
+    if (modo === 'dejar') {
+      const reg = state.referenciasExcesosAceptados && state.referenciasExcesosAceptados.ciclo === state.fechaInicioCiclo
+        ? state.referenciasExcesosAceptados : { ciclo: state.fechaInicioCiclo, cats: {} };
+      reg.cats = reg.cats && typeof reg.cats === 'object' ? reg.cats : {};
+      reg.cats[cat] = fila.gastado;
+      state.referenciasExcesosAceptados = reg;
+      saveState({ markModified: true, sync: true });
+      closeModal();
+      renderReferencias();
+      requestAnimationFrame(updateViewHeight);
+      return;
+    }
+    const cambios = {};
+    if (modo === 'holgura') {
+      if (holgura + 0.005 < exceso) { toast(`La holgura no alcanza · faltan S/ ${fmt(exceso - holgura)}`, true); return; }
+    } else if (modo === 'repartir') {
+      if (quedaTotal + 0.005 < exceso) { toast(`No alcanza · faltan S/ ${fmt(exceso - quedaTotal)}`, true); return; }
+      let resto = exceso;
+      const conSaldo = otras.filter(o => o.queda > 0.005).sort((a, b) => b.queda - a.queda);
+      conSaldo.forEach((o, i) => {
+        const parte = i === conSaldo.length - 1 ? resto : Math.min(o.queda, redondearDinero(exceso * o.queda / quedaTotal));
+        const real = Math.min(o.queda, redondearDinero(parte));
+        cambios[o.cat] = redondearDinero(o.referencia - real);
+        resto = redondearDinero(resto - real);
+      });
+      if (resto > 0.005) { toast(`No alcanza · faltan S/ ${fmt(resto)}`, true); return; }
+    } else if (modo === 'una') {
+      const o = otras.find(x => x.cat === desde);
+      if (!o) return;
+      if (o.queda + 0.005 < exceso) { toast(`${desde} no alcanza · faltan S/ ${fmt(exceso - o.queda)}`, true); return; }
+      cambios[o.cat] = redondearDinero(o.referencia - exceso);
+    } else return;
+    if (referenciasEnModoSugerido()) guardarSugerenciaReferencias(plan.m.sugerencia.refs);
+    const refs = referenciasGuardadas();
+    const manual = referenciasManuales();
+    refs[cat] = redondearDinero(fila.gastado);
+    manual[cat] = true;
+    Object.keys(cambios).forEach(c => {
+      if (cambios[c] > 0.005) refs[c] = cambios[c]; else delete refs[c];
+      manual[c] = true;
+    });
+    saveState({ markModified: true, sync: true });
+    closeModal();
+    renderReferencias();
+    requestAnimationFrame(updateViewHeight);
+    toast(`${cat} · referencia S/ ${fmt(fila.gastado)}`);
   }
 
   function toggleReferenciasEdicion() {

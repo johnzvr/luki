@@ -8019,6 +8019,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-srow .ref-typ-det { border-bottom: 0; padding: 8px 0 0; }
 .ref-field-big { width: 100%; margin: 12px 0 4px; padding: 10px 12px; }
 .ref-field-big span, .ref-field-big input { font-size: 20px; }
+.hero-meta-reducida { font-weight: 400; color: var(--ink-dim); display: inline-block; }
 .ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
 </style>
 </head>
@@ -8121,7 +8122,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     </div>
     <div class="arc-status" id="arcStatus" hidden></div>
     <div class="hero-meta-info" id="heroMetaInfo" style="display:none;">
-      <div class="hero-meta-chip"><span class="hero-meta-dot"></span><span>Meta ahorro: <strong id="heroMetaValue">S/ 0</strong></span></div>
+      <div class="hero-meta-chip"><span class="hero-meta-dot"></span><span>Meta ahorro: <strong id="heroMetaValue">S/ 0</strong><span class="hero-meta-reducida" id="heroMetaReducida" hidden></span></span></div>
     </div>
     <div class="hero-progress" id="heroProgress" hidden aria-hidden="true"><div id="progressFill"></div><div id="progressMeta"></div></div>
   </div>
@@ -8487,7 +8488,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '368';
+  const LEDGER_BUILD = '369';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -8725,6 +8726,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ? `${formatFecha(ranges[0].inicio)} — ${formatFecha(ranges[ranges.length - 1].fin)}` : 'Ciclo de sueldo';
     const metaValue = document.getElementById('heroMetaValue');
     if (metaValue) metaValue.textContent = 'S/ ' + fmt(model.reserve);
+    // BUILD369 · meta bajada con "Tomar del ahorro" en Referencias.
+    const metaReducida = document.getElementById('heroMetaReducida');
+    if (metaReducida) {
+      const desde = metaReducidaDesde();
+      metaReducida.hidden = desde === null;
+      metaReducida.textContent = desde === null ? '' : ` · Reducida desde S/ ${fmt(desde)}`;
+    }
   }
 
   function openBudgetArcHelp() {
@@ -10435,7 +10443,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       new Date().toLocaleDateString('es-PE', { day: 'numeric', month: 'short' });
     
     // Hero con lógica de meta
-    const metaActiva = state.metaResidual > 0;
+    const metaActiva = state.metaResidual > 0 || metaReducidaDesde() !== null; // BUILD369 · con meta reducida a 0 sigue visible el chip
     const gastable = Math.max(0, state.totalDisponible - state.metaResidual);
     const heroCard = document.getElementById('heroCard');
     const heroLabel = document.getElementById('heroLabel');
@@ -15793,10 +15801,46 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return referenciaDeCategoria(cat);
   }
 
-  function reduccionMetaCicloReferencias() {
-    const reg = state.referenciasMetaCiclo;
-    if (!reg || typeof reg !== 'object' || reg.ciclo !== state.fechaInicioCiclo) return 0;
-    return Math.max(0, redondearDinero(Number(reg.reduccion) || 0));
+  // BUILD369 · "Tomar del ahorro" baja la Meta real de este ciclo; se guarda desde cuánto se redujo.
+  // Al abrir otro ciclo (o cambiar la meta en Ajustes) la marca deja de aplicar.
+  function metaReducidaDesde() {
+    const reg = state.metaReducidaCiclo;
+    if (!reg || typeof reg !== 'object' || reg.ciclo !== state.fechaInicioCiclo) return null;
+    const desde = Number(reg.desde);
+    const actual = Number(state.metaResidual) || 0;
+    return Number.isFinite(desde) && desde > actual + 0.005 ? redondearDinero(desde) : null;
+  }
+
+  // Baja la Meta en X: el Gastable sube X y se suma a los bloques que quedan (por días restantes),
+  // sin redistribuir lo que ya tienen.
+  function tomarDelAhorroCiclo(x) {
+    const meta = Number(state.metaResidual) || 0;
+    x = redondearDinero(Math.min(meta, Math.max(0, Number(x) || 0)));
+    if (x <= 0.005) return false;
+    const desde = metaReducidaDesde();
+    state.metaReducidaCiclo = { ciclo: state.fechaInicioCiclo, desde: desde !== null ? desde : redondearDinero(meta) };
+    state.metaResidual = redondearDinero(meta - x);
+    const rangos = calcularRangoSemanas();
+    const actual = calcularSemanaIdxParaFecha(new Date(), rangos);
+    if (Array.isArray(state.semanas) && actual >= 0 && actual < state.semanas.length) {
+      const pesos = pesosDeBloquesRestantes(rangos, actual);
+      const total = pesos.slice(actual, state.semanas.length).reduce((t, w) => t + w, 0);
+      const centavos = Math.round(x * 100);
+      let acumulado = 0, asignado = 0;
+      for (let i = actual; i < state.semanas.length; i++) {
+        acumulado += total > 0 ? pesos[i] : (i === actual ? 1 : 0);
+        const objetivo = Math.round(centavos * acumulado / (total > 0 ? total : 1));
+        const parte = Math.max(0, objetivo - asignado) / 100;
+        asignado += Math.round(parte * 100);
+        if (parte <= 0) continue;
+        const sem = state.semanas[i];
+        sem.presupuesto = redondearDinero((Number(sem.presupuesto) || 0) + parte);
+        sem.presupuestoAsignado = redondearDinero((Number(sem.presupuestoAsignado) || 0) + parte);
+        const dias = Math.max(1, Number(sem.diasRitmo) || Number(pesos[i]) || 1);
+        sem.ritmoDiarioFijo = redondearDinero(sem.presupuestoAsignado / dias);
+      }
+    }
+    return true;
   }
 
   function referenciasBloqueadas() {
@@ -15937,10 +15981,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function modeloReferencias() {
     const inicio = redondearDinero(Number(state.presupuestoInicial) || 0);
-    // BUILD368 · "Tomar del ahorro" baja la meta solo dentro de Referencias y solo este ciclo.
-    const metaBase = redondearDinero(Math.max(0, Number(state.metaResidual) || 0));
-    const reduccionMeta = Math.min(metaBase, reduccionMetaCicloReferencias());
-    const meta = redondearDinero(metaBase - reduccionMeta);
+    // BUILD369 · fuente única: la Meta de ahorro real del ciclo (la misma de Inicio).
+    const meta = redondearDinero(Math.max(0, Number(state.metaResidual) || 0));
+    const metaDesde = metaReducidaDesde();
+    const metaBase = metaDesde !== null ? metaDesde : meta;
+    const reduccionMeta = metaDesde !== null ? redondearDinero(metaDesde - meta) : 0;
     const fijos = cargosFijosReferencias();
     const adelantos = totalAdelantosReferencias();
     const disponible = redondearDinero(inicio - meta - fijos.total - adelantos);
@@ -16040,7 +16085,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         ${m.sugerencia.faltante > 0.005 ? `<div class="ref-aviso">Tu meta implica ${montoPrivadoReferencias(m.sugerencia.faltante, oculto)} menos que un ciclo típico</div>` : ''}
         ${referenciasDesgloseAbierto ? `<div class="ref-calc" onclick="event.stopPropagation()">
           <div class="ref-calc-row"><span>Inicio del ciclo</span>${montoPrivadoReferencias(m.inicio, oculto)}</div>
-          <div class="ref-calc-row"><span>− Meta de ahorro${m.reduccionMeta > 0.005 ? `<span class="ref-calc-note">Este ciclo · base ${oculto ? 'S/ ****' : 'S/' + fmt(m.metaBase)}</span>` : ''}</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
+          <div class="ref-calc-row"><span>− Meta de ahorro${m.reduccionMeta > 0.005 ? `<span class="ref-calc-note">Reducida desde ${oculto ? 'S/ ****' : 'S/' + fmt(m.metaBase)}</span>` : ''}</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
           <div class="ref-calc-row link${referenciasFijosAbierto ? ' open' : ''}" onclick="toggleReferenciasFijos()"><span>− Fijos</span>${montoPrivadoReferencias(m.fijos.total, oculto)}</div>
           ${referenciasFijosAbierto ? `<div class="ref-fijos">${fijosHtml}</div>` : ''}
           ${m.adelantos > 0.005 ? `<div class="ref-calc-row"><span>− Adelantos</span>${montoPrivadoReferencias(m.adelantos, oculto)}</div>` : ''}
@@ -16386,7 +16431,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     openModal(`
       <h2>Tomar del <span class="accent">ahorro</span></h2>
       <p class="modal-sub">Tu ahorro bajará de S/${fmt(m.meta)} a S/${fmt(m.meta - x)}. ¿Confirmas?</p>
-      <p class="ref-det-hint">Solo este ciclo y solo en Referencias: la Meta de ahorro de Inicio, el Gastable y los bloques no cambian.</p>
+      <p class="ref-det-hint">Es tu Meta de ahorro real de este ciclo: el Gastable de Inicio y los bloques que quedan suben S/${fmt(x)}. El próximo ciclo vuelve a tu meta normal.</p>
       <div class="modal-buttons">
         <button class="btn-secondary" data-ref-cat="${catAttr}" data-ref-x="${x}" onclick="abrirFaltanteReferencia(this.dataset.refCat, Number(this.dataset.refX))">Volver</button>
         <button class="btn-primary" data-ref-cat="${catAttr}" data-ref-x="${x}" onclick="cubrirFaltanteReferencia(this.dataset.refCat, Number(this.dataset.refX), 'ahorro')">Confirmar</button>
@@ -16411,18 +16456,18 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       cambios[d.cat] = redondearDinero(d.referencia - x);
     } else if (modo === 'ahorro') {
       if (m.meta + 0.005 < x) { toast(`El ahorro no alcanza · faltan S/ ${fmt(x - m.meta)}`, true); return; }
-      state.referenciasMetaCiclo = { ciclo: state.fechaInicioCiclo, reduccion: redondearDinero(reduccionMetaCicloReferencias() + x) };
+      if (!tomarDelAhorroCiclo(x)) return; // BUILD369 · meta real
     } else return;
     fijarBaseReferencia(cat, nuevo);
     if (Object.keys(cambios).length) {
       const ajustes = ajustesCicloReferencias(true);
       Object.keys(cambios).forEach(c => { ajustes[c] = Math.max(0, cambios[c]); });
     }
-    saveState({ markModified: true, sync: true });
     closeModal();
-    renderReferencias();
+    if (modo === 'ahorro') render(); // BUILD369 · cambia Gastable y bloques de Inicio
+    else { saveState({ markModified: true, sync: true }); renderReferencias(); }
     requestAnimationFrame(updateViewHeight);
-    toast(`${cat} · S/ ${fmt(nuevo)}`);
+    toast(modo === 'ahorro' ? `${cat} · S/ ${fmt(nuevo)} · meta S/ ${fmt(state.metaResidual)}` : `${cat} · S/ ${fmt(nuevo)}`);
   }
 
   // ---------- BUILD366 · Detalle por categoría y recategorizar ----------
@@ -22405,6 +22450,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const cambioFecha = !!fechaInicio && fechaInicio !== fechaAnterior;
     const cambioDisponible = !isNaN(disp) && Math.abs(disp - anteriorDisponible) > 0.005;
     const cambioMeta = !isNaN(meta) && Math.abs(Math.max(0, meta) - anteriorMeta) > 0.005;
+    if (cambioMeta) state.metaReducidaCiclo = null; // BUILD369 · la meta se fijó a mano
     if (cambioModo || cambioFecha) state.ultimoBloqueProcesado = null;
 
     if (!state.modoManualSemanas && (state.bloquesAdaptables === true || cambioModo)) {

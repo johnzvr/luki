@@ -7998,6 +7998,27 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-cat-opt.active { border-color: var(--ink); font-weight: 700; }
 .ref-cat-opt span { font-size: 12px; color: var(--ink-mute); font-weight: 500; }
 .ref-det-ajuste { font-size: 13px; color: var(--ink-dim); margin-top: 2px; }
+.ref-calc-note { display: block; font-size: 12px; color: var(--ink-mute); }
+.ref-srow { padding: 12px 0 11px; border-bottom: 1px solid var(--line); }
+.ref-srow-top { display: flex; align-items: center; gap: 8px; }
+.ref-srow-top .ref-name { flex: 1; min-width: 0; }
+.ref-lock { background: none; border: 0; padding: 4px; color: var(--ink-mute); cursor: pointer; display: flex; }
+.ref-lock svg { width: 17px; height: 17px; }
+.ref-srow.locked .ref-lock { color: var(--ink); }
+.ref-samt { background: none; border: 0; padding: 2px 0; cursor: pointer; font-family: var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: -.045em; font-size: 17px; font-weight: 700; color: var(--ink); text-decoration: underline; text-decoration-color: var(--line-hi); text-underline-offset: 4px; white-space: nowrap; }
+.ref-slider-wrap { position: relative; margin: 10px 0 6px; height: 24px; }
+.ref-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; margin: 0; background: transparent; touch-action: pan-y; cursor: pointer; position: relative; z-index: 1; }
+.ref-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--ink) var(--p, 0%), var(--arc-track, var(--line)) var(--p, 0%)); }
+.ref-slider::-moz-range-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--ink) var(--p, 0%), var(--arc-track, var(--line)) var(--p, 0%)); }
+.ref-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); border: 2px solid var(--ink); margin-top: -9px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.ref-slider::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--surface); border: 2px solid var(--ink); }
+.ref-tip-mark { position: absolute; top: 5px; width: 2px; height: 14px; margin-left: -1px; border-radius: 1px; background: var(--ink-mute); left: calc(11px + (100% - 22px) * var(--t, 0)); pointer-events: none; z-index: 0; }
+.ref-srow-foot { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--ink-dim); }
+.ref-srow-foot .ref-num { font-size: 12.5px; color: var(--ink-dim); }
+.ref-srow-foot .ref-typ { width: auto; text-align: right; font-size: 12.5px; color: var(--ink-dim); text-decoration: underline; text-decoration-color: var(--line-hi); text-underline-offset: 3px; }
+.ref-srow .ref-typ-det { border-bottom: 0; padding: 8px 0 0; }
+.ref-field-big { width: 100%; margin: 12px 0 4px; padding: 10px 12px; }
+.ref-field-big span, .ref-field-big input { font-size: 20px; }
 .ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
 </style>
 </head>
@@ -8466,7 +8487,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '367';
+  const LEDGER_BUILD = '368';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -15772,6 +15793,19 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return referenciaDeCategoria(cat);
   }
 
+  function reduccionMetaCicloReferencias() {
+    const reg = state.referenciasMetaCiclo;
+    if (!reg || typeof reg !== 'object' || reg.ciclo !== state.fechaInicioCiclo) return 0;
+    return Math.max(0, redondearDinero(Number(reg.reduccion) || 0));
+  }
+
+  function referenciasBloqueadas() {
+    if (!state.referenciasBloqueadas || typeof state.referenciasBloqueadas !== 'object' || Array.isArray(state.referenciasBloqueadas)) {
+      state.referenciasBloqueadas = {};
+    }
+    return state.referenciasBloqueadas;
+  }
+
   function quitarAjusteCicloReferencia(cat) {
     const ajustes = ajustesCicloReferencias();
     if (Object.prototype.hasOwnProperty.call(ajustes, cat)) delete ajustes[cat];
@@ -15903,7 +15937,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function modeloReferencias() {
     const inicio = redondearDinero(Number(state.presupuestoInicial) || 0);
-    const meta = redondearDinero(Math.max(0, Number(state.metaResidual) || 0));
+    // BUILD368 · "Tomar del ahorro" baja la meta solo dentro de Referencias y solo este ciclo.
+    const metaBase = redondearDinero(Math.max(0, Number(state.metaResidual) || 0));
+    const reduccionMeta = Math.min(metaBase, reduccionMetaCicloReferencias());
+    const meta = redondearDinero(metaBase - reduccionMeta);
     const fijos = cargosFijosReferencias();
     const adelantos = totalAdelantosReferencias();
     const disponible = redondearDinero(inicio - meta - fijos.total - adelantos);
@@ -15935,7 +15972,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       .filter(f => f.referencia && f.gastado - f.referencia > 0.005)
       .filter(f => !(Number(aceptados[f.cat]) >= f.gastado - 0.005))
       .map(f => ({ cat: f.cat, exceso: redondearDinero(f.gastado - f.referencia) }));
-    return { inicio, meta, fijos, adelantos, disponible, filas, suma, sugerencia, sugerido, ahorro, excesos };
+    return { inicio, meta, metaBase, reduccionMeta, fijos, adelantos, disponible, filas, suma, sugerencia, sugerido, ahorro, excesos };
   }
 
   function ahorroProyectadoReferencias(meta, disponible, pares) {
@@ -15958,12 +15995,18 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
   function lineaReferenciasHtml(suma, disponible, oculto = false) {
     const dif = redondearDinero(disponible - suma);
-    return `Referencias ${montoPrivadoReferencias(suma, oculto)} · `
-      + (dif < 0 ? `Excedes ${montoPrivadoReferencias(-dif, oculto)}` : `Holgura ${montoPrivadoReferencias(dif, oculto)}`);
+    return `Asignado ${montoPrivadoReferencias(suma, oculto)} · `
+      + (dif < 0 ? `Excedes ${montoPrivadoReferencias(-dif, oculto)}` : `Sin asignar ${montoPrivadoReferencias(dif, oculto)}`);
   }
 
-  function lineaAhorroReferenciasHtml(ahorro, oculto = false) {
-    return `Ahorro si sigues las referencias: ${montoPrivadoReferencias(ahorro, oculto)}`;
+  // BUILD368 · "Ahorro: S/ meta separado · hasta S/ meta + sin asignar". Lo que pasó de su
+  // referencia ya salió del sin asignar; si lo supera, el ahorro bajaría por debajo de la meta.
+  function lineaAhorroReferenciasHtml(ahorro, oculto = false, meta = 0) {
+    const extra = redondearDinero(ahorro - meta);
+    const base = `Ahorro: ${montoPrivadoReferencias(meta, oculto)} separado`;
+    if (extra > 0.005) return `${base} · hasta ${montoPrivadoReferencias(ahorro, oculto)}`;
+    if (extra < -0.005) return `${base} · bajaría a ${montoPrivadoReferencias(ahorro, oculto)}`;
+    return base;
   }
 
   function renderReferencias() {
@@ -15990,38 +16033,61 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     let html = `<div class="ref-view">
       <div class="ref-summary${referenciasDesgloseAbierto ? ' open' : ''}" onclick="toggleReferenciasDesglose(event)">
-        <div class="ref-eyebrow"><span>Disponible variable</span><span class="ref-eyebrow-actions"><button type="button" class="ref-eye" onclick="toggleReferenciasPrivacidad(event)" aria-label="${oculto ? 'Mostrar montos' : 'Ocultar montos'}"><svg class="ui-icon"><use href="#icon-${oculto ? 'eye-off' : 'eye'}"></use></svg></button>${chev}</span></div>
+        <div class="ref-eyebrow"><span>Disponible</span><span class="ref-eyebrow-actions"><button type="button" class="ref-eye" onclick="toggleReferenciasPrivacidad(event)" aria-label="${oculto ? 'Mostrar montos' : 'Ocultar montos'}"><svg class="ui-icon"><use href="#icon-${oculto ? 'eye-off' : 'eye'}"></use></svg></button>${chev}</span></div>
         <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.disponible)}</div>
         <div class="ref-subline" id="refSubline">${lineaReferenciasHtml(m.suma, m.disponible, oculto)}</div>
-        <div class="ref-subline ref-ahorro" id="refAhorro">${lineaAhorroReferenciasHtml(m.ahorro, oculto)}</div>
+        <div class="ref-subline ref-ahorro" id="refAhorro">${lineaAhorroReferenciasHtml(m.ahorro, oculto, m.meta)}</div>
         ${m.sugerencia.faltante > 0.005 ? `<div class="ref-aviso">Tu meta implica ${montoPrivadoReferencias(m.sugerencia.faltante, oculto)} menos que un ciclo típico</div>` : ''}
         ${referenciasDesgloseAbierto ? `<div class="ref-calc" onclick="event.stopPropagation()">
           <div class="ref-calc-row"><span>Inicio del ciclo</span>${montoPrivadoReferencias(m.inicio, oculto)}</div>
-          <div class="ref-calc-row"><span>− Meta de ahorro</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
+          <div class="ref-calc-row"><span>− Meta de ahorro${m.reduccionMeta > 0.005 ? `<span class="ref-calc-note">Este ciclo · base ${oculto ? 'S/ ****' : 'S/' + fmt(m.metaBase)}</span>` : ''}</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
           <div class="ref-calc-row link${referenciasFijosAbierto ? ' open' : ''}" onclick="toggleReferenciasFijos()"><span>− Fijos</span>${montoPrivadoReferencias(m.fijos.total, oculto)}</div>
           ${referenciasFijosAbierto ? `<div class="ref-fijos">${fijosHtml}</div>` : ''}
           ${m.adelantos > 0.005 ? `<div class="ref-calc-row"><span>− Adelantos</span>${montoPrivadoReferencias(m.adelantos, oculto)}</div>` : ''}
-          <div class="ref-calc-row total"><span>Disponible variable</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
+          <div class="ref-calc-row total"><span>Disponible</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
         </div>` : ''}
       </div>
       <div class="ref-head"><span class="ref-title">${referenciasEditando ? 'Editar referencias' : 'Por categoría'}</span>
         <span class="ref-actions">${referenciasEditando ? '<button type="button" class="ref-btn" onclick="sugerirReferencias()">Sugerir</button>' : ''}<button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button></span></div>`;
 
     if (referenciasEditando) {
+      // BUILD368 · un slider por categoría (saltos de S/ 10).
       const det = tipicoDetalleReferencias();
       const tipico = det.tipico;
-      html += m.filas.map((f, i) => {
+      const bloqueadas = referenciasBloqueadas();
+      const sinAsignar = redondearDinero(m.disponible - m.suma);
+      html += m.filas.map(f => {
+        const ref = f.referencia || 0;
+        const tope = redondearDinero(ref + Math.max(0, sinAsignar));
+        const t = Number(tipico[f.cat]) || 0;
+        const max = Math.max(200, Math.ceil(Math.max(tope * 1.4, tope + 300, t * 1.5, ref * 1.5) / 100) * 100);
+        const pos = v => Math.max(0, Math.min(1, v / max));
         const abierto = referenciasTipicoAbierto === f.cat;
+        const catAttr = escapeHtml(f.cat);
         const detalle = abierto ? `<div class="ref-typ-det">${det.ciclos.length
           ? det.ciclos.map((c, j) => `<span><span class="ref-typ-ciclo">${escapeHtml(c.etiqueta)}</span> <span class="ref-num">S/${fmt(det.valores[f.cat]?.[j] || 0)}</span></span>`).join('')
-            + `<span class="ref-typ-med">Mediana <span class="ref-num">S/${fmt(tipico[f.cat] || 0)}</span></span>`
+            + `<span class="ref-typ-med">Mediana <span class="ref-num">S/${fmt(t)}</span></span>`
           : '<span>Aún no hay ciclos archivados con categorías.</span>'}</div>` : '';
-        return `<div class="ref-erow-wrap${abierto ? ' open' : ''}"><div class="ref-erow"><span class="ref-name">${escapeHtml(f.cat)}</span>
-        <label class="ref-field"><span>S/</span><input type="text" inputmode="decimal" autocomplete="off" data-ref-cat="${escapeHtml(f.cat)}" data-ref-base="${f.base ? f.base.toFixed(2) : ''}" value="${f.base ? f.base.toFixed(2) : ''}" placeholder="0.00" oninput="referenciaInput()" onchange="referenciaCambio(this)"></label>
-        <button type="button" class="ref-typ" data-ref-typ="${i}" onclick="toggleTipicoReferencia(this)">Típico<br><span class="ref-num">${Number.isFinite(tipico[f.cat]) ? 'S/' + fmt(tipico[f.cat]) : '—'}</span></button></div>${detalle}</div>`;
+        const candado = bloqueadas[f.cat];
+        return `<div class="ref-srow${abierto ? ' open' : ''}${candado ? ' locked' : ''}">
+          <div class="ref-srow-top"><span class="ref-name">${catAttr}</span>
+            <button type="button" class="ref-lock" data-ref-cat="${catAttr}" onclick="toggleBloqueoReferencia(this.dataset.refCat)" aria-label="${candado ? 'Desbloquear' : 'Bloquear'}">${candado
+              ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
+              : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>'}</button>
+            <button type="button" class="ref-samt" id="refAmt-${f.orden}" data-ref-cat="${catAttr}" onclick="abrirMontoExactoReferencia(this.dataset.refCat)">${ref ? 'S/' + fmt(ref) : 'S/0.00'}</button></div>
+          <div class="ref-slider-wrap">
+            <input type="range" class="ref-slider" min="0" max="${max}" step="10" value="${ref}" style="--p:${pos(ref) * 100}%"
+              data-ref-cat="${catAttr}" data-ref-orden="${f.orden}" data-ref-ini="${ref}" data-ref-tope="${tope}" data-ref-min="${f.gastado}"
+              oninput="moverSliderReferencia(this)" onchange="soltarSliderReferencia(this)" aria-label="Referencia de ${catAttr}">
+            ${t > 0 ? `<span class="ref-tip-mark" style="--t:${pos(t)}"></span>` : ''}
+          </div>
+          <div class="ref-srow-foot"><span>Gastado <span class="ref-num">S/${fmt(f.gastado)}</span></span>
+            <button type="button" class="ref-typ" data-ref-cat="${catAttr}" onclick="toggleTipicoReferencia(this)">Típico <span class="ref-num">${t > 0 ? 'S/' + fmt(t) : '—'}</span></button></div>
+          ${detalle}
+        </div>`;
       }).join('');
       const usados = det.ciclos.map(c => c.etiqueta).join(', ');
-      html += `<div class="ref-hint">Típico: mediana de lo gastado en cada categoría en los últimos 3 ciclos completos con categorías${usados ? ` (inician ${escapeHtml(usados)})` : ''}. Toca Típico para ver los 3 valores.${det.omitidos ? ` ${det.omitidos === 1 ? 'Se omitió 1 ciclo sin categorías o incompleto.' : 'Se omitieron ' + det.omitidos + ' ciclos sin categorías o incompletos.'}` : ''} Deja vacío para quitar la referencia.</div>`;
+      html += `<div class="ref-hint">Toca el monto para escribirlo exacto. El candado evita que una categoría se ajuste sola. La rayita marca el típico: mediana de los últimos 3 ciclos completos con categorías${usados ? ` (inician ${escapeHtml(usados)})` : ''}; tócalo para ver los 3 valores.${det.omitidos ? ` ${det.omitidos === 1 ? 'Se omitió 1 ciclo sin categorías o incompleto.' : 'Se omitieron ' + det.omitidos + ' ciclos sin categorías o incompletos.'}` : ''}</div>`;
     } else {
       const avance = avanceCicloReferencias();
       const marca = avance ? Math.max(0, Math.min(100, avance.fraccion * 100)) : null;
@@ -16082,7 +16148,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const sub = document.getElementById('refSubline');
     if (sub) sub.innerHTML = lineaReferenciasHtml(redondearDinero(suma), m.disponible, oculto);
     const ah = document.getElementById('refAhorro');
-    if (ah) ah.innerHTML = lineaAhorroReferenciasHtml(ahorroProyectadoReferencias(m.meta, m.disponible, pares), oculto);
+    if (ah) ah.innerHTML = lineaAhorroReferenciasHtml(ahorroProyectadoReferencias(m.meta, m.disponible, pares), oculto, m.meta);
   }
 
   // Al salir del campo: guarda esa referencia (es un cambio de datos, se sincroniza).
@@ -16129,13 +16195,234 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function toggleTipicoReferencia(btn) {
-    const fila = btn && btn.closest('.ref-erow');
-    const cat = fila && fila.querySelector('input[data-ref-cat]')?.getAttribute('data-ref-cat');
+    const cat = btn && btn.getAttribute('data-ref-cat');
     const activo = document.activeElement;
     if (activo && activo.matches && activo.matches('#referenciasView input[data-ref-cat]')) { referenciaCambio(activo); activo.blur(); }
     referenciasTipicoAbierto = referenciasTipicoAbierto === cat ? null : cat;
     renderReferencias();
     requestAnimationFrame(updateViewHeight);
+  }
+
+  // ---------- BUILD368 · Sliders del modo Editar ----------
+  // Subir: sale primero de "Sin asignar". Si no alcanza, se detiene y pregunta de dónde.
+  // Bajar: lo liberado vuelve a "Sin asignar" (nunca al ahorro). Nunca por debajo de lo gastado.
+  // El monto elegido es la nueva referencia base; lo que se quite a otras o al ahorro vale solo este ciclo.
+  function toggleBloqueoReferencia(cat) {
+    const b = referenciasBloqueadas();
+    if (b[cat]) delete b[cat]; else b[cat] = true;
+    saveState({ markModified: true, sync: true });
+    renderReferencias();
+  }
+
+  function valorSliderReferencia(slider) {
+    const min = Number(slider.dataset.refMin) || 0;
+    const tope = Number(slider.dataset.refTope) || 0;
+    const pedido = Math.max(min, Number(slider.value) || 0);
+    const ini = Number(slider.dataset.refIni) || 0;
+    return { pedido, valor: pedido > tope ? Math.max(ini, tope) : pedido, tope, ini, min };
+  }
+
+  function moverSliderReferencia(slider) {
+    const { valor, pedido } = valorSliderReferencia(slider);
+    slider.dataset.refPedido = String(pedido); // lo que pidió, aunque el slider se detenga
+    if (Math.abs(Number(slider.value) - valor) > 0.001) slider.value = valor;
+    slider.style.setProperty('--p', Math.max(0, Math.min(100, valor / (Number(slider.max) || 1) * 100)) + '%');
+    const amt = document.getElementById('refAmt-' + slider.dataset.refOrden);
+    if (amt) amt.textContent = 'S/' + fmt(valor);
+    // En vivo: el resumen con este valor en lugar del anterior.
+    const m = modeloReferencias();
+    const cat = slider.dataset.refCat;
+    const oculto = referenciasOcultas;
+    const pares = m.filas.map(f => [f.cat === cat ? valor : f.referencia, f.gastado]);
+    const suma = redondearDinero(m.suma - (Number(slider.dataset.refIni) || 0) + valor);
+    const sub = document.getElementById('refSubline');
+    if (sub) sub.innerHTML = lineaReferenciasHtml(suma, m.disponible, oculto);
+    const ah = document.getElementById('refAhorro');
+    if (ah) ah.innerHTML = lineaAhorroReferenciasHtml(ahorroProyectadoReferencias(m.meta, m.disponible, pares), oculto, m.meta);
+  }
+
+  function soltarSliderReferencia(slider) {
+    const pedido = Number(slider.dataset.refPedido);
+    aplicarMontoReferencia(slider.dataset.refCat, Number.isFinite(pedido) ? pedido : valorSliderReferencia(slider).pedido);
+  }
+
+  // Fija la referencia base de una categoría y quita su ajuste del ciclo.
+  function fijarBaseReferencia(cat, valor) {
+    if (referenciasEnModoSugerido()) guardarSugerenciaReferencias(modeloReferencias().sugerencia.refs);
+    const refs = referenciasGuardadas();
+    const v = redondearDinero(Math.max(0, valor));
+    if (v > 0.005) refs[cat] = v; else delete refs[cat];
+    referenciasManuales()[cat] = true;
+    quitarAjusteCicloReferencia(cat);
+  }
+
+  function aplicarMontoReferencia(cat, pedidoCrudo) {
+    const m = modeloReferencias();
+    const fila = m.filas.find(f => f.cat === cat);
+    if (!fila) return;
+    const ref = fila.referencia || 0;
+    const sinAsignar = redondearDinero(m.disponible - m.suma);
+    const tope = redondearDinero(ref + Math.max(0, sinAsignar));
+    const pedido = redondearDinero(Math.max(fila.gastado, Number(pedidoCrudo) || 0));
+    // Pasarse menos de un salto (S/ 10) solo completa lo sin asignar, sin preguntar.
+    if (pedido <= tope + 0.005 || (tope > ref + 0.005 && pedido - tope < 10)) {
+      const valor = Math.min(pedido, Math.max(ref, tope));
+      if (Math.abs(valor - ref) > 0.005) {
+        fijarBaseReferencia(cat, valor);
+        saveState({ markModified: true, sync: true });
+      }
+      renderReferencias();
+      requestAnimationFrame(updateViewHeight);
+      return;
+    }
+    // Llega hasta donde alcanza lo sin asignar y pregunta por el resto.
+    if (tope > ref + 0.005) {
+      fijarBaseReferencia(cat, tope);
+      saveState({ markModified: true, sync: true });
+    }
+    renderReferencias();
+    abrirFaltanteReferencia(cat, redondearDinero(pedido - Math.max(ref, tope)));
+  }
+
+  function abrirMontoExactoReferencia(cat) {
+    const fila = modeloReferencias().filas.find(f => f.cat === cat);
+    if (!fila) return;
+    const catAttr = escapeHtml(cat);
+    openModal(`
+      <h2>${catAttr}</h2>
+      <p class="modal-sub">Referencia exacta. No puede ser menor que lo gastado (S/${fmt(fila.gastado)}).</p>
+      <label class="ref-field ref-field-big"><span>S/</span><input type="text" inputmode="decimal" autocomplete="off" id="refMontoExacto" value="${fila.referencia ? fila.referencia.toFixed(2) : ''}" placeholder="0.00"></label>
+      <div class="modal-buttons">
+        <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn-primary" data-ref-cat="${catAttr}" onclick="confirmarMontoExactoReferencia(this.dataset.refCat)">Aplicar</button>
+      </div>
+    `);
+    requestAnimationFrame(() => { const i = document.getElementById('refMontoExacto'); if (i) { i.focus(); i.select(); } });
+  }
+
+  function confirmarMontoExactoReferencia(cat) {
+    const input = document.getElementById('refMontoExacto');
+    const valor = leerMontoReferencia(input ? input.value : '') || 0;
+    closeModal();
+    aplicarMontoReferencia(cat, valor);
+  }
+
+  function donantesReferencia(cat, m) {
+    const bloqueadas = referenciasBloqueadas();
+    return m.filas
+      .filter(f => f.cat !== cat && (f.referencia || 0) > 0.005)
+      .map(f => ({ cat: f.cat, referencia: f.referencia, cap: Math.max(0, redondearDinero(f.referencia - f.gastado)), bloqueada: !!bloqueadas[f.cat] }));
+  }
+
+  // (a) en proporción a su monto, sin bajar ninguna de lo gastado; lo que una no puede dar pasa a las demás.
+  function planRepartoPorMontoReferencia(donantes, x) {
+    let pool = donantes.filter(d => !d.bloqueada && d.cap > 0.005).map(d => ({ ...d, toma: 0 }));
+    const todos = pool.slice();
+    let resto = x;
+    for (let vuelta = 0; vuelta < 20 && resto > 0.005 && pool.length; vuelta++) {
+      const total = pool.reduce((t, d) => t + d.referencia, 0);
+      let repartido = 0;
+      pool.forEach(d => {
+        const parte = Math.min(d.cap - d.toma, resto * d.referencia / total);
+        d.toma += parte;
+        repartido += parte;
+      });
+      resto -= repartido;
+      pool = pool.filter(d => d.cap - d.toma > 0.005);
+    }
+    const cambios = {};
+    let suma = 0;
+    todos.forEach(d => { d.toma = redondearDinero(d.toma); suma += d.toma; });
+    const ajuste = redondearDinero(Math.min(x, suma) - suma); // centavos del redondeo
+    if (todos.length && Math.abs(ajuste) > 0.001) {
+      const d = todos.slice().sort((a, b) => (b.cap - b.toma) - (a.cap - a.toma))[0];
+      d.toma = redondearDinero(Math.max(0, Math.min(d.cap, d.toma + ajuste)));
+    }
+    todos.forEach(d => { if (d.toma > 0.005) cambios[d.cat] = redondearDinero(d.referencia - d.toma); });
+    const cubierto = redondearDinero(todos.reduce((t, d) => t + d.toma, 0));
+    return { cambios, falta: redondearDinero(Math.max(0, x - cubierto)) };
+  }
+
+  function abrirFaltanteReferencia(cat, x, elegir = false) {
+    if (x <= 0.005) return;
+    const m = modeloReferencias();
+    const donantes = donantesReferencia(cat, m);
+    const catAttr = escapeHtml(cat);
+    if (elegir) {
+      openModal(`
+        <h2>Quitar de <span class="accent">otra categoría</span></h2>
+        <p class="modal-sub">${catAttr} necesita S/${fmt(x)}. Cada una muestra lo que puede dar sin bajar de lo gastado.</p>
+        <div class="ref-ops">${donantes.length ? donantes.map(d => {
+          const alcanza = d.cap + 0.005 >= x;
+          return `<button type="button" class="ref-op" ${alcanza ? '' : 'disabled'} data-ref-cat="${catAttr}" data-ref-desde="${escapeHtml(d.cat)}" data-ref-x="${x}" onclick="cubrirFaltanteReferencia(this.dataset.refCat, Number(this.dataset.refX), 'una', this.dataset.refDesde)">
+            <span class="ref-op-t">${escapeHtml(d.cat)}${d.bloqueada ? ' · bloqueada' : ''}</span><span class="ref-op-s">Puede dar S/${fmt(d.cap)}</span>${alcanza ? '' : faltaReacomodoHtml(d.cap, x)}</button>`;
+        }).join('') : '<p class="modal-sub">No hay otras categorías con referencia.</p>'}</div>
+        <div class="modal-buttons"><button class="btn-secondary" data-ref-cat="${catAttr}" data-ref-x="${x}" onclick="abrirFaltanteReferencia(this.dataset.refCat, Number(this.dataset.refX))">Volver</button></div>
+      `);
+      return;
+    }
+    const reparto = planRepartoPorMontoReferencia(donantes, x);
+    const okReparto = reparto.falta <= 0.005;
+    const okAhorro = m.meta + 0.005 >= x;
+    openModal(`
+      <h2>No queda dinero <span class="accent">sin asignar</span></h2>
+      <p class="modal-sub">¿De dónde sacamos S/${fmt(x)} para ${catAttr}?</p>
+      <div class="ref-ops">
+        <button type="button" class="ref-op" ${okReparto ? '' : 'disabled'} data-ref-cat="${catAttr}" data-ref-x="${x}" onclick="cubrirFaltanteReferencia(this.dataset.refCat, Number(this.dataset.refX), 'repartir')">
+          <span class="ref-op-t">Repartir entre las demás</span><span class="ref-op-s">No bloqueadas, en proporción a su monto · solo este ciclo</span>${okReparto ? '' : `<span class="ref-op-falta">No alcanza · faltan S/${fmt(reparto.falta)}</span>`}</button>
+        <button type="button" class="ref-op" data-ref-cat="${catAttr}" data-ref-x="${x}" onclick="abrirFaltanteReferencia(this.dataset.refCat, Number(this.dataset.refX), true)">
+          <span class="ref-op-t">Quitar de una categoría ›</span><span class="ref-op-s">Eliges cuál · solo este ciclo</span></button>
+        <button type="button" class="ref-op" ${okAhorro ? '' : 'disabled'} data-ref-cat="${catAttr}" data-ref-x="${x}" onclick="confirmarTomarAhorroReferencia(this.dataset.refCat, Number(this.dataset.refX))">
+          <span class="ref-op-t">Tomar del ahorro</span><span class="ref-op-s">Ahorro separado S/${fmt(m.meta)} · solo este ciclo</span>${okAhorro ? '' : faltaReacomodoHtml(m.meta, x)}</button>
+      </div>
+      <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal()">Cancelar</button></div>
+    `);
+  }
+
+  function confirmarTomarAhorroReferencia(cat, x) {
+    const m = modeloReferencias();
+    if (m.meta + 0.005 < x) return;
+    const catAttr = escapeHtml(cat);
+    openModal(`
+      <h2>Tomar del <span class="accent">ahorro</span></h2>
+      <p class="modal-sub">Tu ahorro bajará de S/${fmt(m.meta)} a S/${fmt(m.meta - x)}. ¿Confirmas?</p>
+      <p class="ref-det-hint">Solo este ciclo y solo en Referencias: la Meta de ahorro de Inicio, el Gastable y los bloques no cambian.</p>
+      <div class="modal-buttons">
+        <button class="btn-secondary" data-ref-cat="${catAttr}" data-ref-x="${x}" onclick="abrirFaltanteReferencia(this.dataset.refCat, Number(this.dataset.refX))">Volver</button>
+        <button class="btn-primary" data-ref-cat="${catAttr}" data-ref-x="${x}" onclick="cubrirFaltanteReferencia(this.dataset.refCat, Number(this.dataset.refX), 'ahorro')">Confirmar</button>
+      </div>
+    `);
+  }
+
+  function cubrirFaltanteReferencia(cat, x, modo, desde) {
+    const m = modeloReferencias();
+    const fila = m.filas.find(f => f.cat === cat);
+    if (!fila || !(x > 0.005)) { closeModal(); return; }
+    const nuevo = redondearDinero((fila.referencia || 0) + x);
+    let cambios = {};
+    if (modo === 'repartir') {
+      const plan = planRepartoPorMontoReferencia(donantesReferencia(cat, m), x);
+      if (plan.falta > 0.005) { toast(`No alcanza · faltan S/ ${fmt(plan.falta)}`, true); return; }
+      cambios = plan.cambios;
+    } else if (modo === 'una') {
+      const d = donantesReferencia(cat, m).find(o => o.cat === desde);
+      if (!d) return;
+      if (d.cap + 0.005 < x) { toast(`${desde} no alcanza · faltan S/ ${fmt(x - d.cap)}`, true); return; }
+      cambios[d.cat] = redondearDinero(d.referencia - x);
+    } else if (modo === 'ahorro') {
+      if (m.meta + 0.005 < x) { toast(`El ahorro no alcanza · faltan S/ ${fmt(x - m.meta)}`, true); return; }
+      state.referenciasMetaCiclo = { ciclo: state.fechaInicioCiclo, reduccion: redondearDinero(reduccionMetaCicloReferencias() + x) };
+    } else return;
+    fijarBaseReferencia(cat, nuevo);
+    if (Object.keys(cambios).length) {
+      const ajustes = ajustesCicloReferencias(true);
+      Object.keys(cambios).forEach(c => { ajustes[c] = Math.max(0, cambios[c]); });
+    }
+    saveState({ markModified: true, sync: true });
+    closeModal();
+    renderReferencias();
+    requestAnimationFrame(updateViewHeight);
+    toast(`${cat} · S/ ${fmt(nuevo)}`);
   }
 
   // ---------- BUILD366 · Detalle por categoría y recategorizar ----------
@@ -16211,10 +16498,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const exceso = redondearDinero(fila.gastado - fila.referencia);
     if (exceso <= 0.005) return null;
     const holgura = Math.max(0, redondearDinero(m.disponible - m.suma));
+    const bloqueadas = referenciasBloqueadas();
     const otras = m.filas
       .filter(f => f.cat !== cat && f.referencia)
-      .map(f => ({ cat: f.cat, referencia: f.referencia, queda: Math.max(0, redondearDinero(f.referencia - f.gastado)) }));
-    const quedaTotal = redondearDinero(otras.reduce((t, o) => t + o.queda, 0));
+      .map(f => ({ cat: f.cat, referencia: f.referencia, queda: Math.max(0, redondearDinero(f.referencia - f.gastado)), bloqueada: !!bloqueadas[f.cat] }));
+    // BUILD368 · las bloqueadas no se ajustan automáticamente (sí se pueden elegir a mano).
+    const quedaTotal = redondearDinero(otras.filter(o => !o.bloqueada).reduce((t, o) => t + o.queda, 0));
     return { m, fila, exceso, holgura, otras, quedaTotal };
   }
 
@@ -16248,9 +16537,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       <p class="modal-sub">Superó su referencia por S/${fmt(exceso)}. ¿De dónde lo cubres?</p>
       <div class="ref-ops">
         <button type="button" class="ref-op" ${okHolgura ? '' : 'disabled'} data-ref-cat="${catAttr}" onclick="aplicarReacomodoReferencia(this.dataset.refCat, 'holgura')">
-          <span class="ref-op-t">Tomar de la holgura</span><span class="ref-op-s">Holgura S/${fmt(holgura)}</span>${okHolgura ? '' : faltaReacomodoHtml(holgura, exceso)}</button>
+          <span class="ref-op-t">Tomar de lo sin asignar</span><span class="ref-op-s">Sin asignar S/${fmt(holgura)}</span>${okHolgura ? '' : faltaReacomodoHtml(holgura, exceso)}</button>
         <button type="button" class="ref-op" ${okRepartir ? '' : 'disabled'} data-ref-cat="${catAttr}" onclick="aplicarReacomodoReferencia(this.dataset.refCat, 'repartir')">
-          <span class="ref-op-t">Repartir entre las demás</span><span class="ref-op-s">En proporción a lo que les queda · S/${fmt(quedaTotal)}</span>${okRepartir ? '' : faltaReacomodoHtml(quedaTotal, exceso)}</button>
+          <span class="ref-op-t">Repartir entre las demás</span><span class="ref-op-s">No bloqueadas, en proporción a lo que les queda · S/${fmt(quedaTotal)}</span>${okRepartir ? '' : faltaReacomodoHtml(quedaTotal, exceso)}</button>
         <button type="button" class="ref-op" data-ref-cat="${catAttr}" onclick="abrirReacomodoReferencia(this.dataset.refCat, true)">
           <span class="ref-op-t">Quitar de una categoría ›</span><span class="ref-op-s">Eliges cuál</span></button>
         <button type="button" class="ref-op" data-ref-cat="${catAttr}" onclick="aplicarReacomodoReferencia(this.dataset.refCat, 'dejar')">
@@ -16278,11 +16567,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     }
     const cambios = {};
     if (modo === 'holgura') {
-      if (holgura + 0.005 < exceso) { toast(`La holgura no alcanza · faltan S/ ${fmt(exceso - holgura)}`, true); return; }
+      if (holgura + 0.005 < exceso) { toast(`Lo sin asignar no alcanza · faltan S/ ${fmt(exceso - holgura)}`, true); return; }
     } else if (modo === 'repartir') {
       if (quedaTotal + 0.005 < exceso) { toast(`No alcanza · faltan S/ ${fmt(exceso - quedaTotal)}`, true); return; }
       let resto = exceso;
-      const conSaldo = otras.filter(o => o.queda > 0.005).sort((a, b) => b.queda - a.queda);
+      const conSaldo = otras.filter(o => o.queda > 0.005 && !o.bloqueada).sort((a, b) => b.queda - a.queda);
       conSaldo.forEach((o, i) => {
         const parte = i === conSaldo.length - 1 ? resto : Math.min(o.queda, redondearDinero(exceso * o.queda / quedaTotal));
         const real = Math.min(o.queda, redondearDinero(parte));

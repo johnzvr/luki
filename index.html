@@ -7978,6 +7978,25 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-op-t { font-size: 15px; font-weight: 600; }
 .ref-op-s { font-size: 12.5px; color: var(--ink-dim); }
 .ref-op-falta { font-size: 12.5px; color: var(--ink); font-weight: 600; }
+.ref-eyebrow-actions { display: flex; align-items: center; gap: 10px; }
+.ref-eye { background: none; border: 0; padding: 2px; color: var(--ink-dim); cursor: pointer; display: flex; }
+.ref-eye .ui-icon { width: 18px; height: 18px; }
+.ref-row { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ref-det-total { margin: 4px 0 2px; }
+.ref-det-total .ref-amt { font-size: 18px; }
+.ref-det-hint { font-size: 12.5px; color: var(--ink-mute); margin: 4px 0 8px; }
+.ref-movs { display: flex; flex-direction: column; max-height: 52vh; overflow-y: auto; margin-bottom: 6px; }
+.ref-mov { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 11px 0; font-family: var(--font-ui); color: var(--ink); cursor: pointer; width: 100%; }
+.ref-mov-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ref-mov-det { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ref-mov-meta { font-size: 12.5px; color: var(--ink-dim); }
+.ref-mov-meta b { font-weight: 600; color: var(--ink-dim); }
+.ref-mov-amt { font-family: var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: -.045em; font-size: 16px; font-weight: 700; white-space: nowrap; }
+.ref-mov.off .ref-mov-det, .ref-mov.off .ref-mov-amt { color: var(--ink-mute); }
+.ref-cat-list { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 4px; max-height: 55vh; overflow-y: auto; }
+.ref-cat-opt { display: flex; justify-content: space-between; align-items: center; text-align: left; font-family: var(--font-ui); font-size: 15px; font-weight: 500; color: var(--ink); background: var(--surface); border: 1px solid var(--line-hi); border-radius: 14px; padding: 10px 14px; cursor: pointer; }
+.ref-cat-opt.active { border-color: var(--ink); font-weight: 700; }
+.ref-cat-opt span { font-size: 12px; color: var(--ink-mute); font-weight: 500; }
 .ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
 </style>
 </head>
@@ -8446,7 +8465,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '365';
+  const LEDGER_BUILD = '366';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -8698,7 +8717,6 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     balanceHidden = !balanceHidden;
     try { localStorage.setItem('ledger-balance-hidden-v1', balanceHidden ? '1' : '0'); } catch(e) {}
     applyBalancePrivacy();
-    try { renderReferencias(); } catch(e) {} // BUILD365 · Referencias también se oculta
   }
 
   function applyBalancePrivacy() {
@@ -15663,6 +15681,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   let referenciasDesgloseAbierto = false;
   let referenciasFijosAbierto = false;
   let referenciasTipicoAbierto = null; // BUILD365
+  // BUILD366 · ojo propio de Referencias, independiente del de Inicio (se recuerda por dispositivo).
+  let referenciasOcultas = (() => { try { return localStorage.getItem('luki-referencias-hidden-v1') === '1'; } catch (e) { return false; } })();
+
+  function toggleReferenciasPrivacidad(event) {
+    if (event) event.stopPropagation();
+    referenciasOcultas = !referenciasOcultas;
+    try { localStorage.setItem('luki-referencias-hidden-v1', referenciasOcultas ? '1' : '0'); } catch (e) {}
+    renderReferencias();
+  }
 
   function categoriasVariablesReferencias() {
     return MOVEMENT_CATEGORIES.filter(cat => !REFERENCIAS_FIJAS.includes(cat));
@@ -15924,7 +15951,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       shell.addEventListener('scroll', () => { if (shell.scrollLeft) shell.scrollLeft = 0; });
     }
     const m = modeloReferencias();
-    const oculto = typeof balanceHidden !== 'undefined' && balanceHidden;
+    const oculto = referenciasOcultas; // BUILD366
     const chev = '<svg class="ref-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>';
     const fijosHtml = m.fijos.items.length
       ? m.fijos.items.map(it => `<div class="ref-fijo"><span class="ref-fijo-name">${escapeHtml(it.detalle)}<span class="ref-fijo-meta">${escapeHtml(it.categoria)}${it.proyectado ? ' · Proyectado' : ''}</span></span><span class="ref-num">S/${fmt(it.monto)}</span></div>`).join('')
@@ -15932,7 +15959,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     let html = `<div class="ref-view">
       <div class="ref-summary${referenciasDesgloseAbierto ? ' open' : ''}" onclick="toggleReferenciasDesglose(event)">
-        <div class="ref-eyebrow"><span>Disponible variable</span>${chev}</div>
+        <div class="ref-eyebrow"><span>Disponible variable</span><span class="ref-eyebrow-actions"><button type="button" class="ref-eye" onclick="toggleReferenciasPrivacidad(event)" aria-label="${oculto ? 'Mostrar montos' : 'Ocultar montos'}"><svg class="ui-icon"><use href="#icon-${oculto ? 'eye-off' : 'eye'}"></use></svg></button>${chev}</span></div>
         <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.disponible)}</div>
         <div class="ref-subline" id="refSubline">${lineaReferenciasHtml(m.suma, m.disponible, oculto)}</div>
         <div class="ref-subline ref-ahorro" id="refAhorro">${lineaAhorroReferenciasHtml(m.ahorro, oculto)}</div>
@@ -15971,11 +15998,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       html += m.excesos.map(x => `<div class="ref-exceso"><span>${escapeHtml(x.cat)} superó por <span class="ref-num">S/${fmt(x.exceso)}</span></span><button type="button" class="ref-exceso-btn" data-ref-exceso="${escapeHtml(x.cat)}" onclick="abrirReacomodoReferencia(this.dataset.refExceso)">Reacomodar</button></div>`).join('');
       html += m.filas.map(f => {
         if (!f.referencia) {
-          return `<div class="ref-row off"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>S/${fmt(f.gastado)}</b> / —</span></div></div>`;
+          return `<div class="ref-row off" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>S/${fmt(f.gastado)}</b> / —</span></div></div>`;
         }
         const exceso = redondearDinero(f.gastado - f.referencia);
         const pct = Math.max(0, Math.min(100, f.gastado / f.referencia * 100));
-        return `<div class="ref-row"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>S/${fmt(f.gastado)}</b> / S/${fmt(f.referencia)}</span></div>
+        return `<div class="ref-row" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>S/${fmt(f.gastado)}</b> / S/${fmt(f.referencia)}</span></div>
           <div class="ref-bar-row"><div class="ref-bar"><i style="width:${pct}%"></i>${marca !== null ? `<s style="left:${marca}%"></s>` : ''}</div>${exceso > 0.005 ? `<span class="ref-over">+S/${fmt(exceso)}</span>` : ''}</div></div>`;
       }).join('');
     }
@@ -16006,7 +16033,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   // Mientras escribe: solo actualiza la línea del resumen (no guarda).
   function referenciaInput() {
     const m = modeloReferencias();
-    const oculto = typeof balanceHidden !== 'undefined' && balanceHidden;
+    const oculto = referenciasOcultas; // BUILD366
     const gastado = {};
     m.filas.forEach(f => { gastado[f.cat] = f.gastado; });
     let suma = 0;
@@ -16068,6 +16095,69 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     referenciasTipicoAbierto = referenciasTipicoAbierto === cat ? null : cat;
     renderReferencias();
     requestAnimationFrame(updateViewHeight);
+  }
+
+  // ---------- BUILD366 · Detalle por categoría y recategorizar ----------
+  function motivoNoCuentaReferencia(mov) {
+    if (esMovimientoAdelanto(mov)) return 'Adelanto · se cuenta al asignarlo';
+    if (mov.adelantoOrigenId) return 'Adelanto del ciclo pasado';
+    const tipo = normalizarTipoMovimiento(mov.tipo);
+    if (tipo === 'F' || tipo === 'FDS') return 'Sale del Fondo';
+    if (esMovimientoDSCubierto(mov)) return 'Deuda cubierta';
+    if (esMovimientoProyectado(mov)) return 'Proyectado pendiente';
+    return movimientoCuentaEnReferencias(mov) ? '' : 'No afecta el presupuesto';
+  }
+
+  function abrirDetalleReferencia(cat) {
+    if (!categoriasVariablesReferencias().includes(cat)) return;
+    const m = modeloReferencias();
+    const fila = m.filas.find(f => f.cat === cat);
+    const movs = (Array.isArray(state.log) ? state.log : [])
+      .map((mov, index) => ({ mov, index }))
+      .filter(({ mov }) => mov && mov.etiqueta !== 'recalcula' && categoriaCanonicaReferencias(mov.categoria) === cat)
+      .sort((a, b) => (Number(b.mov.timestamp) || 0) - (Number(a.mov.timestamp) || 0));
+    const catAttr = escapeHtml(cat);
+    const lista = movs.length ? movs.map(({ mov, index }) => {
+      const motivo = motivoNoCuentaReferencia(mov);
+      const impacto = impactoPresupuestoMovimiento(mov);
+      const parcial = !motivo && impacto < (Number(mov.monto) || 0) - 0.005 ? `Cuenta S/${fmt(impacto)}` : '';
+      const fecha = Number(mov.timestamp) ? formatFecha(new Date(Number(mov.timestamp))) : (mov.fecha || '');
+      return `<button type="button" class="ref-mov${motivo ? ' off' : ''}" data-ref-idx="${index}" data-ref-cat="${catAttr}" onclick="abrirRecategorizarReferencia(Number(this.dataset.refIdx), this.dataset.refCat)">
+        <span class="ref-mov-main"><span class="ref-mov-det">${escapeHtml(mov.detalle || 'Sin detalle')}</span>
+        <span class="ref-mov-meta">${escapeHtml(fecha)} · ${escapeHtml(etiquetaTipoMovimiento(mov))}${motivo ? ` · <b>No cuenta</b> · ${escapeHtml(motivo)}` : ''}${parcial ? ` · ${parcial}` : ''}</span></span>
+        <span class="ref-mov-amt">S/${fmt(mov.monto)}</span></button>`;
+    }).join('') : '<p class="modal-sub">No hay movimientos de esta categoría en el ciclo.</p>';
+    openModal(`
+      <h2>${escapeHtml(cat)}</h2>
+      <div class="ref-det-total"><span class="ref-amt"><b>S/${fmt(fila ? fila.gastado : 0)}</b> / ${fila && fila.referencia ? 'S/' + fmt(fila.referencia) : 'sin referencia'}</span></div>
+      <p class="ref-det-hint">Toca un movimiento para cambiar su categoría.</p>
+      <div class="ref-movs">${lista}</div>
+      <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal()">Cerrar</button></div>
+    `);
+  }
+
+  function abrirRecategorizarReferencia(index, catOrigen) {
+    const mov = state.log && state.log[index];
+    if (!mov) return;
+    const actual = categoriaCanonicaReferencias(mov.categoria);
+    openNestedModal(`
+      <h2>Cambiar <span class="accent">categoría</span></h2>
+      <p class="modal-sub">${escapeHtml(mov.detalle || 'Movimiento')} · S/${fmt(mov.monto)}</p>
+      <div class="ref-cat-list">${MOVEMENT_CATEGORIES.map(cat => `<button type="button" class="ref-cat-opt${cat === actual ? ' active' : ''}" data-ref-idx="${index}" data-ref-nueva="${escapeHtml(cat)}" data-ref-origen="${escapeHtml(catOrigen)}" onclick="recategorizarReferencia(Number(this.dataset.refIdx), this.dataset.refNueva, this.dataset.refOrigen)">${escapeHtml(cat)}${REFERENCIAS_FIJAS.includes(cat) ? '<span>Fijo</span>' : ''}</button>`).join('')}</div>
+      <div class="modal-buttons"><button class="btn-secondary" onclick="closeNestedModal()">Cancelar</button></div>
+    `);
+  }
+
+  // La categoría no altera montos (spec §7.1): solo cambia en qué barra cuenta.
+  function recategorizarReferencia(index, nueva, catOrigen) {
+    const mov = state.log && state.log[index];
+    if (!mov || !MOVEMENT_CATEGORIES.includes(nueva)) return;
+    closeNestedModal();
+    if (categoriaCanonicaReferencias(mov.categoria) === nueva) return;
+    mov.categoria = nueva;
+    render();
+    abrirDetalleReferencia(catOrigen);
+    toast(`Movido a ${nueva}`);
   }
 
   // ---------- BUILD365 · Reacomodar un exceso ----------

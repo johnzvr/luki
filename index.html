@@ -8528,7 +8528,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '377';
+  const LEDGER_BUILD = '378';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -9508,6 +9508,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       const modal = document.getElementById('modalContent');
       if (modal) modal.scrollTop = allMovementsScrollTop;
     }
+    try { renderReferencias(); } catch (e) {} // BUILD378 · las barras de Referencias siguen a la categoría
 
     toast(categoria ? `Categoría · ${categoria}` : 'Categoría eliminada');
   }

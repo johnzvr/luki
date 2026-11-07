@@ -7903,6 +7903,64 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 #modalContent:has(#simPurchaseAmount) .purchase-footer-register { flex: 1; min-height: 56px; border-radius: 28px; font-size: 16px; }
 #modalContent:has(#simPurchaseAmount) .purchase-footer-register:disabled { opacity: .35; cursor: default; }
 </style>
+<style id="luki-363-referencias">
+/* BUILD363 · 5 pestañas: cada una toma el ancho de su texto. */
+.ledger-arc-ui .view-tabs { grid-template-columns: repeat(5, auto); justify-content: space-between; }
+.ledger-arc-ui .view-tab { padding: 0 4px; white-space: nowrap; }
+@media (max-width: 400px) { .ledger-arc-ui .view-tab { font-size: 11.5px; padding: 0 2px; } }
+
+/* BUILD363 · Referencias */
+.ref-view { padding-top: 6px; }
+.ref-summary { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ref-eyebrow { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 500; color: var(--ink-dim); }
+.ref-chev { width: 16px; height: 16px; color: var(--ink-mute); transition: transform .2s; }
+.ref-summary.open .ref-chev { transform: rotate(180deg); }
+.ref-hero { font-family: var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: -.045em; font-size: 40px; font-weight: 700; line-height: 1; margin: 6px 0 8px; color: var(--ink); }
+.ref-subline { font-size: 14px; color: var(--ink-dim); }
+.ref-num { font-family: var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: -.045em; color: var(--ink); white-space: nowrap; }
+.ref-calc { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 6px; cursor: default; }
+.ref-calc-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 14px; color: var(--ink-dim); padding: 5px 0; }
+.ref-calc-row .ref-num { font-size: 15px; }
+.ref-calc-row.link { cursor: pointer; }
+.ref-calc-row.link > span:first-child::after { content: '›'; margin-left: 6px; color: var(--ink-mute); display: inline-block; transition: transform .2s; }
+.ref-calc-row.link.open > span:first-child::after { transform: rotate(90deg); }
+.ref-calc-row.total { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 9px; color: var(--ink); font-weight: 600; }
+.ref-calc-row.total .ref-num { font-weight: 700; }
+.ref-fijos { margin: 2px 0 6px 12px; border-left: 1px solid var(--line); padding-left: 12px; }
+.ref-fijo { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 0; font-size: 13px; }
+.ref-fijo-name { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ref-fijo-meta { display: block; font-size: 12px; color: var(--ink-mute); }
+.ref-fijo .ref-num { font-size: 13px; }
+.ref-fijos-empty { font-size: 13px; color: var(--ink-mute); padding: 5px 0; }
+.ref-head { display: flex; justify-content: space-between; align-items: center; margin: 26px 0 4px; }
+.ref-title { font-size: 13px; color: var(--ink-dim); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.ref-btn { font-family: var(--font-ui); font-size: 14px; font-weight: 600; color: var(--ink); background: var(--surface); border: 1px solid var(--line-hi); border-radius: 14px; padding: 7px 14px; cursor: pointer; }
+.ref-btn.done { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.ref-row { padding: 13px 0 12px; border-bottom: 1px solid var(--line); }
+.ref-row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ref-name { font-size: 16px; font-weight: 600; color: var(--ink); min-width: 0; }
+.ref-amt { font-family: var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: -.045em; font-size: 15px; white-space: nowrap; color: var(--ink-mute); }
+.ref-amt b { font-weight: 700; color: var(--ink); }
+.ref-bar-row { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+.ref-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--arc-track, var(--line)); position: relative; }
+.ref-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink); border-radius: 2px; }
+.ref-bar s { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink-mute); border-radius: 1px; }
+.ref-over { font-family: var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: -.045em; font-size: 13px; font-weight: 700; color: var(--ink-dim); white-space: nowrap; }
+.ref-row.off .ref-name, .ref-row.off .ref-amt, .ref-row.off .ref-amt b { color: var(--ink-mute); font-weight: 400; }
+.ref-row.off .ref-name { font-weight: 600; }
+.ref-erow { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.ref-erow .ref-name { flex: 1; }
+.ref-field { display: flex; align-items: center; border: 1px solid var(--line-hi); border-radius: 10px; padding: 7px 10px; width: 116px; background: var(--surface); }
+.ref-field span, .ref-field input { font-family: var(--font-num); font-size: 15px; font-weight: 700; letter-spacing: -.045em; color: var(--ink); }
+.ref-field input { border: 0; background: transparent; width: 100%; min-width: 0; outline: none; padding: 0; }
+.ref-field input::placeholder { color: var(--ink-mute); font-weight: 400; }
+.ref-typ { width: 74px; text-align: right; font-size: 12px; color: var(--ink-dim); line-height: 1.3; }
+.ref-typ .ref-num { font-size: 13px; color: var(--ink-dim); }
+.ref-hint { font-size: 12.5px; color: var(--ink-mute); margin-top: 12px; line-height: 1.45; }
+/* Al enfocar un campo, el navegador podía desplazar el contenedor de pantallas y mostrar media vista. */
+.views-shell { overflow: clip; }
+.ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
+</style>
 </head>
 <body class="ledger-arc-ui">
 
@@ -7965,8 +8023,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   <div class="view-tabs" role="tablist" aria-label="Secciones de Luki">
     <button class="view-tab active" data-view="0" onclick="goToView(0)" role="tab" aria-selected="true">Inicio</button>
     <button class="view-tab" data-view="1" onclick="goToView(1)" role="tab" aria-selected="false">Movimientos</button>
-    <button class="view-tab" data-view="2" onclick="goToView(2)" role="tab" aria-selected="false">Ciclos</button>
-    <button class="view-tab" data-view="3" onclick="goToView(3)" role="tab" aria-selected="false">Anotaciones</button>
+    <button class="view-tab" data-view="2" onclick="goToView(2)" role="tab" aria-selected="false">Referencias</button><!-- BUILD363 -->
+    <button class="view-tab" data-view="3" onclick="goToView(3)" role="tab" aria-selected="false">Ciclos</button>
+    <button class="view-tab" data-view="4" onclick="goToView(4)" role="tab" aria-selected="false">Anotaciones</button>
   </div>
 
   <div class="views-shell" id="viewsShell">
@@ -8185,8 +8244,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <div id="logContainer"></div>
       </section>
 
+      <!-- BUILD363 · Ventana Referencias -->
+      <section class="app-view" data-view-index="2" aria-label="Referencias">
+        <div id="referenciasView"></div>
+      </section>
+
       <!-- Ventana Ciclos -->
-      <section class="app-view" data-view-index="2" aria-label="Ciclos">
+      <section class="app-view" data-view-index="3" aria-label="Ciclos">
         <div class="section-head view-section-head">
           <h2>Ciclos <span class="serif-italic" style="color:var(--ink-dim);font-weight:400;">anteriores</span></h2>
         </div>
@@ -8239,7 +8303,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </section>
 
       <!-- Ventana Anotaciones -->
-      <section class="app-view" data-view-index="3" aria-label="Anotaciones">
+      <section class="app-view" data-view-index="4" aria-label="Anotaciones">
         <div class="notes-view-head">
           <h2>Anotaciones</h2>
           <span class="notes-count" id="notesCount"></span>
@@ -8363,7 +8427,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '362';
+  const LEDGER_BUILD = '363';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -8471,7 +8535,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   // Limpia el respaldo temporal usado por una versión anterior.
   try { localStorage.removeItem('ledger-backup-before-drive-v1'); } catch(e) {}
   let uiSections = loadUiSections();
-  let currentView = Math.max(0, Math.min(3, parseInt(localStorage.getItem('ledger-active-view-v1') || '0')));
+  let currentView = Math.max(0, Math.min(4, parseInt(localStorage.getItem('ledger-active-view-v1') || '0'))); // BUILD363 · 5 pestañas
   // BUILD301 · el desplegable de Proyectados se cierra solo al cambiar de pantalla.
   let projectedMenuOpen = false;
   let viewsInitialized = false;
@@ -8654,7 +8718,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function goToView(index, options = {}) {
-    const nextView = Math.max(0, Math.min(3, Number(index) || 0));
+    const nextView = Math.max(0, Math.min(4, Number(index) || 0)); // BUILD363
     if (nextView !== currentView) {
       projectedMenuOpen = false;
       bandejaMenuOpen = false; // BUILD311
@@ -8748,7 +8812,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       if (!horizontal) return;
       const navigationDx = dx;
       const atFirst = currentView === 0 && navigationDx > 0;
-      const atLast = currentView === 3 && navigationDx < 0;
+      const atLast = currentView === 4 && navigationDx < 0; // BUILD363
       const resisted = (atFirst || atLast) ? navigationDx * 0.22 : navigationDx;
       track.classList.add('dragging');
       track.style.transform = `translateX(calc(-${currentView * 100}% + ${resisted}px))`;
@@ -10447,6 +10511,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     renderComparison();
     renderCycleHistoryInline();
     renderAnotaciones();
+    renderReferencias(); // BUILD363
     applySectionState();
     initViews();
     requestAnimationFrame(updateViewHeight);
@@ -15566,6 +15631,255 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       minute: '2-digit'
     });
     return `${dia} · ${hora}`;
+  }
+
+  // =====================================================================
+  // BUILD363 · REFERENCIAS
+  // Montos orientativos por categoría variable (no son límites). Solo lectura
+  // fuera del modo Editar. No toca Disponible, bloques, deuda ni Fondo.
+  // =====================================================================
+  const REFERENCIAS_FIJAS = ['Familia / apoyo', 'Suscripciones', 'Servicios', 'Fitness', 'Trabajo'];
+  let referenciasEditando = false;
+  let referenciasDesgloseAbierto = false;
+  let referenciasFijosAbierto = false;
+
+  function categoriasVariablesReferencias() {
+    return MOVEMENT_CATEGORIES.filter(cat => !REFERENCIAS_FIJAS.includes(cat));
+  }
+
+  function referenciasGuardadas() {
+    if (!state.referenciasCategoria || typeof state.referenciasCategoria !== 'object' || Array.isArray(state.referenciasCategoria)) {
+      state.referenciasCategoria = {};
+    }
+    return state.referenciasCategoria;
+  }
+
+  function referenciaDeCategoria(cat) {
+    const valor = Number(referenciasGuardadas()[cat]);
+    return Number.isFinite(valor) && valor > 0 ? redondearDinero(valor) : null;
+  }
+
+  // Gasto real que pesa en el presupuesto: S y DS (DS+P la mitad), como el Gastado del Excel.
+  // Fuera: redistribuciones, F / F+DS (Fondo), DS+C, A, adelantos asignados y proyectados.
+  function movimientoCuentaEnReferencias(mov) {
+    if (!mov || mov.etiqueta === 'recalcula') return false;
+    if (esMovimientoProyectado(mov) || esMovimientoFondo(mov)) return false;
+    if (esMovimientoDSCubierto(mov) || esMovimientoAdelanto(mov)) return false;
+    if (mov.adelantoOrigenId) return false;
+    return afectaPresupuestoSalarial(mov);
+  }
+
+  function gastoPorCategoriaReferencias(movimientos) {
+    const totales = {};
+    (Array.isArray(movimientos) ? movimientos : []).forEach(mov => {
+      if (!movimientoCuentaEnReferencias(mov)) return;
+      const cat = categoriaMovimiento(mov);
+      if (!cat) return;
+      totales[cat] = redondearDinero((totales[cat] || 0) + impactoPresupuestoMovimiento(mov));
+    });
+    return totales;
+  }
+
+  // Fijos: cargos de las categorías fijas, pagados o proyectados pendientes.
+  // Un proyectado realizado ya es un movimiento real: se cuenta una sola vez.
+  function cargosFijosReferencias() {
+    const items = [];
+    (Array.isArray(state.log) ? state.log : []).forEach(mov => {
+      const cat = categoriaMovimiento(mov);
+      if (!REFERENCIAS_FIJAS.includes(cat)) return;
+      if (esMovimientoProyectado(mov)) {
+        if (mov.etiqueta === 'recalcula') return;
+        const monto = redondearDinero(Math.max(0, Number(mov.monto) || 0));
+        if (monto > 0) items.push({ detalle: mov.detalle || cat, categoria: cat, monto, proyectado: true });
+        return;
+      }
+      if (!movimientoCuentaEnReferencias(mov)) return;
+      const monto = impactoPresupuestoMovimiento(mov);
+      if (monto > 0) items.push({ detalle: mov.detalle || cat, categoria: cat, monto, proyectado: false });
+    });
+    items.sort((a, b) => b.monto - a.monto);
+    return { items, total: redondearDinero(items.reduce((t, it) => t + it.monto, 0)) };
+  }
+
+  // El Inicio del ciclo no resta los adelantos (BUILD336): se restan al asignarlos.
+  // Como aquí no cuentan en su categoría, se descuentan aparte: pendientes + asignados.
+  function totalAdelantosReferencias() {
+    let total = 0;
+    try { total += adelantosPendientes().reduce((t, it) => t + (Number(it.monto) || 0), 0); } catch (e) {}
+    (Array.isArray(state.log) ? state.log : []).forEach(mov => {
+      if (mov && mov.adelantoOrigenId && mov.etiqueta !== 'recalcula' && !esMovimientoProyectado(mov)) {
+        total += impactoPresupuestoMovimiento(mov);
+      }
+    });
+    return redondearDinero(total);
+  }
+
+  // Valor "Típico": mediana del gasto por categoría en los últimos 3 ciclos archivados.
+  function tipicoPorCategoriaReferencias() {
+    const ciclos = getArchivedCycles()
+      .filter(c => c && Array.isArray(c.movimientos) && c.detalleDisponible !== false)
+      .slice(0, 3);
+    const porCiclo = ciclos.map(c => gastoPorCategoriaReferencias(c.movimientos));
+    const tipico = {};
+    if (!porCiclo.length) return tipico;
+    categoriasVariablesReferencias().forEach(cat => {
+      const valores = porCiclo.map(t => Number(t[cat]) || 0).sort((a, b) => a - b);
+      const mitad = Math.floor(valores.length / 2);
+      tipico[cat] = redondearDinero(valores.length % 2 ? valores[mitad] : (valores[mitad - 1] + valores[mitad]) / 2);
+    });
+    return tipico;
+  }
+
+  function avanceCicloReferencias() {
+    const rangos = calcularRangoSemanas();
+    if (!rangos.length) return null;
+    const inicio = inicioDelDia(rangos[0].inicio);
+    const fin = inicioDelDia(rangos[rangos.length - 1].fin);
+    const dias = Math.max(1, Math.round((fin - inicio) / MS_DIA) + 1);
+    const hoy = inicioDelDia(new Date());
+    const dia = Math.max(0, Math.min(dias, Math.round((hoy - inicio) / MS_DIA) + 1));
+    return { dia, dias, fraccion: dia / dias };
+  }
+
+  function modeloReferencias() {
+    const inicio = redondearDinero(Number(state.presupuestoInicial) || 0);
+    const meta = redondearDinero(Math.max(0, Number(state.metaResidual) || 0));
+    const fijos = cargosFijosReferencias();
+    const adelantos = totalAdelantosReferencias();
+    const disponible = redondearDinero(inicio - meta - fijos.total - adelantos);
+    const gasto = gastoPorCategoriaReferencias(state.log);
+    const filas = categoriasVariablesReferencias().map((cat, orden) => ({
+      cat, orden, gastado: redondearDinero(gasto[cat] || 0), referencia: referenciaDeCategoria(cat)
+    }));
+    // Orden estable: por referencia (mayor a menor); sin referencia al final.
+    filas.sort((a, b) => {
+      if (!!a.referencia !== !!b.referencia) return a.referencia ? -1 : 1;
+      if (a.referencia && b.referencia && b.referencia !== a.referencia) return b.referencia - a.referencia;
+      return a.orden - b.orden;
+    });
+    const suma = redondearDinero(filas.reduce((t, f) => t + (f.referencia || 0), 0));
+    return { inicio, meta, fijos, adelantos, disponible, filas, suma };
+  }
+
+  function lineaReferenciasHtml(suma, disponible) {
+    const dif = redondearDinero(disponible - suma);
+    return `Referencias <span class="ref-num">S/${fmt(suma)}</span> · `
+      + (dif < 0 ? `Excedes <span class="ref-num">S/${fmt(-dif)}</span>` : `Holgura <span class="ref-num">S/${fmt(dif)}</span>`);
+  }
+
+  function renderReferencias() {
+    const root = document.getElementById('referenciasView');
+    if (!root) return;
+    // Un render externo (p. ej. la bandeja cada 30 s) no debe borrar lo que se está escribiendo.
+    const enfocado = document.activeElement;
+    if (referenciasEditando && enfocado && root.contains(enfocado) && enfocado.matches('input[data-ref-cat]')) return;
+    if (!Number.isFinite(Number(state.presupuestoInicial)) || !state.fechaInicioCiclo) {
+      root.innerHTML = '<div class="ref-empty">Abre un ciclo para ver tus referencias.</div>';
+      return;
+    }
+    const shell = document.getElementById('viewsShell');
+    if (shell && !shell.dataset.refScrollFix) {
+      shell.dataset.refScrollFix = '1';
+      shell.addEventListener('scroll', () => { if (shell.scrollLeft) shell.scrollLeft = 0; });
+    }
+    const m = modeloReferencias();
+    const oculto = typeof balanceHidden !== 'undefined' && balanceHidden;
+    const chev = '<svg class="ref-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>';
+    const fijosHtml = m.fijos.items.length
+      ? m.fijos.items.map(it => `<div class="ref-fijo"><span class="ref-fijo-name">${escapeHtml(it.detalle)}<span class="ref-fijo-meta">${escapeHtml(it.categoria)}${it.proyectado ? ' · Proyectado' : ''}</span></span><span class="ref-num">S/${fmt(it.monto)}</span></div>`).join('')
+      : '<div class="ref-fijos-empty">Sin cargos fijos en este ciclo.</div>';
+
+    let html = `<div class="ref-view">
+      <div class="ref-summary${referenciasDesgloseAbierto ? ' open' : ''}" onclick="toggleReferenciasDesglose(event)">
+        <div class="ref-eyebrow"><span>Disponible variable</span>${chev}</div>
+        <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.disponible)}</div>
+        <div class="ref-subline" id="refSubline">${lineaReferenciasHtml(m.suma, m.disponible)}</div>
+        ${referenciasDesgloseAbierto ? `<div class="ref-calc" onclick="event.stopPropagation()">
+          <div class="ref-calc-row"><span>Inicio del ciclo</span><span class="ref-num">S/${fmt(m.inicio)}</span></div>
+          <div class="ref-calc-row"><span>− Meta de ahorro</span><span class="ref-num">S/${fmt(m.meta)}</span></div>
+          <div class="ref-calc-row link${referenciasFijosAbierto ? ' open' : ''}" onclick="toggleReferenciasFijos()"><span>− Fijos</span><span class="ref-num">S/${fmt(m.fijos.total)}</span></div>
+          ${referenciasFijosAbierto ? `<div class="ref-fijos">${fijosHtml}</div>` : ''}
+          ${m.adelantos > 0.005 ? `<div class="ref-calc-row"><span>− Adelantos</span><span class="ref-num">S/${fmt(m.adelantos)}</span></div>` : ''}
+          <div class="ref-calc-row total"><span>Disponible variable</span><span class="ref-num">S/${fmt(m.disponible)}</span></div>
+        </div>` : ''}
+      </div>
+      <div class="ref-head"><span class="ref-title">${referenciasEditando ? 'Editar referencias' : 'Por categoría'}</span>
+        <button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button></div>`;
+
+    if (referenciasEditando) {
+      const tipico = tipicoPorCategoriaReferencias();
+      html += m.filas.map(f => `<div class="ref-erow"><span class="ref-name">${escapeHtml(f.cat)}</span>
+        <label class="ref-field"><span>S/</span><input type="text" inputmode="decimal" autocomplete="off" data-ref-cat="${escapeHtml(f.cat)}" value="${f.referencia ? f.referencia.toFixed(2) : ''}" placeholder="0.00" oninput="referenciaInput()" onchange="referenciaCambio(this)"></label>
+        <span class="ref-typ">Típico<br><span class="ref-num">${Number.isFinite(tipico[f.cat]) ? 'S/' + fmt(tipico[f.cat]) : '—'}</span></span></div>`).join('');
+      html += '<div class="ref-hint">Típico: mediana de lo gastado en cada categoría en los últimos 3 ciclos. Deja vacío para quitar la referencia.</div>';
+    } else {
+      const avance = avanceCicloReferencias();
+      const marca = avance ? Math.max(0, Math.min(100, avance.fraccion * 100)) : null;
+      html += m.filas.map(f => {
+        if (!f.referencia) {
+          return `<div class="ref-row off"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>S/${fmt(f.gastado)}</b> / —</span></div></div>`;
+        }
+        const exceso = redondearDinero(f.gastado - f.referencia);
+        const pct = Math.max(0, Math.min(100, f.gastado / f.referencia * 100));
+        return `<div class="ref-row"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>S/${fmt(f.gastado)}</b> / S/${fmt(f.referencia)}</span></div>
+          <div class="ref-bar-row"><div class="ref-bar"><i style="width:${pct}%"></i>${marca !== null ? `<s style="left:${marca}%"></s>` : ''}</div>${exceso > 0.005 ? `<span class="ref-over">+S/${fmt(exceso)}</span>` : ''}</div></div>`;
+      }).join('');
+    }
+    html += '</div>';
+    root.innerHTML = html;
+  }
+
+  function toggleReferenciasDesglose(event) {
+    if (event && event.target && event.target.closest && event.target.closest('.ref-calc')) return;
+    referenciasDesgloseAbierto = !referenciasDesgloseAbierto;
+    if (!referenciasDesgloseAbierto) referenciasFijosAbierto = false;
+    renderReferencias();
+    requestAnimationFrame(updateViewHeight);
+  }
+
+  function toggleReferenciasFijos() {
+    referenciasFijosAbierto = !referenciasFijosAbierto;
+    renderReferencias();
+    requestAnimationFrame(updateViewHeight);
+  }
+
+  function leerMontoReferencia(texto) {
+    const limpio = String(texto || '').replace(/[^\d.,]/g, '').replace(/,(?=\d{3}(\D|$))/g, '').replace(',', '.');
+    const valor = Number(limpio);
+    return Number.isFinite(valor) && valor > 0 ? redondearDinero(valor) : null;
+  }
+
+  // Mientras escribe: solo actualiza la línea del resumen (no guarda).
+  function referenciaInput() {
+    const m = modeloReferencias();
+    let suma = 0;
+    document.querySelectorAll('#referenciasView input[data-ref-cat]').forEach(input => {
+      suma += leerMontoReferencia(input.value) || 0;
+    });
+    const sub = document.getElementById('refSubline');
+    if (sub) sub.innerHTML = lineaReferenciasHtml(redondearDinero(suma), m.disponible);
+  }
+
+  // Al salir del campo: guarda esa referencia (es un cambio de datos, se sincroniza).
+  function referenciaCambio(input) {
+    if (!input) return;
+    const cat = input.getAttribute('data-ref-cat');
+    if (!categoriasVariablesReferencias().includes(cat)) return;
+    const valor = leerMontoReferencia(input.value);
+    const refs = referenciasGuardadas();
+    if (valor) refs[cat] = valor; else delete refs[cat];
+    input.value = valor ? valor.toFixed(2) : '';
+    saveState({ markModified: true, sync: true });
+  }
+
+  function toggleReferenciasEdicion() {
+    if (referenciasEditando) {
+      const activo = document.activeElement;
+      if (activo && activo.matches && activo.matches('#referenciasView input[data-ref-cat]')) { referenciaCambio(activo); activo.blur(); }
+    }
+    referenciasEditando = !referenciasEditando;
+    renderReferencias();
+    requestAnimationFrame(updateViewHeight);
   }
 
   function renderAnotaciones() {

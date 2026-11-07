@@ -4758,38 +4758,49 @@
   .edit-sem-row input[type="checkbox"]:checked::after { transform: rotate(45deg) scale(1); }
   .edit-sem-row input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
   .edit-sem-row:has(input:checked) { border-color: #22A65A; }
-  /* BUILD381 · elegir bloques dentro de Editar movimiento */
-  .edit-blocks-row {
-    border: 1.5px solid var(--line-hi);
-    border-radius: 12px;
-    padding: 11px 13px 12px;
-    display: grid;
-    gap: 10px;
-    color: var(--ink);
-    transition: opacity .15s;
-  }
-  .edit-blocks-row.is-off { opacity: .42; pointer-events: none; }
-  .edit-blocks-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; font-weight: 550; }
-  .edit-blocks-head b { font-weight: 550; color: var(--ink-mute); white-space: nowrap; }
-  .edit-blocks-pills { display: flex; flex-wrap: wrap; gap: 6px; }
-  .edit-block-pill { position: relative; cursor: pointer; }
-  .edit-block-pill input { position: absolute; opacity: 0; pointer-events: none; }
-  .edit-block-pill span {
-    min-width: 40px;
-    height: 34px;
-    padding: 0 10px;
-    border: 1.5px solid var(--line-hi);
-    border-radius: 12px;
-    display: grid;
-    place-items: center;
-    font-family: 'Space Mono', monospace;
-    font-size: 13px;
+  /* BUILD382 · formulario único de movimiento: lista de bloques visible */
+  .edit-type-option input:disabled + span { opacity: .32; cursor: not-allowed; }
+  .form-mov-monto-fijo {
+    font-family: var(--font-num);
+    font-size: 28px;
     font-weight: 700;
+    letter-spacing: -.02em;
     color: var(--ink);
-    transition: background-color .15s, border-color .15s, color .15s;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
   }
-  .edit-block-pill input:checked + span { background: var(--ink); border-color: var(--ink); color: var(--bg); }
-  .edit-block-pill input:disabled + span { opacity: .3; cursor: not-allowed; }
+  .form-mov-monto-fijo small { font-size: 12px; font-weight: 700; color: var(--ink-mute); letter-spacing: 0; }
+  .form-mov-bloques { margin-bottom: 12px; }
+  .form-mov-bloques[hidden] { display: none; }
+  .form-mov-bloques-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+  .form-mov-bloques-titulo { font-size: 10px; color: var(--ink-mute); letter-spacing: .08em; font-weight: 600; text-transform: uppercase; }
+  .form-mov-bloques-head b { font-size: 12px; font-weight: 600; color: var(--ink-dim); white-space: nowrap; }
+  .form-mov-bloques-lista { border: 1.5px solid var(--line-hi); border-radius: 14px; overflow: hidden; }
+  .form-mov-bloque { display: flex; align-items: center; gap: 12px; padding: 10px 13px; border-top: 1px solid var(--line); cursor: pointer; }
+  .form-mov-bloque:first-child { border-top: 0; }
+  .form-mov-bloque input {
+    -webkit-appearance: none; appearance: none; flex: 0 0 auto; width: 22px; height: 22px; margin: 0;
+    border: 1.5px solid var(--ink-mute); border-radius: 6px; background: transparent;
+    display: grid; place-content: center; cursor: pointer; transition: background-color .15s, border-color .15s;
+  }
+  .form-mov-bloque input::after {
+    content: ''; width: 6px; height: 11px; margin-top: -2px; border: solid #fff; border-width: 0 2.5px 2.5px 0;
+    transform: rotate(45deg) scale(0); transition: transform .15s;
+  }
+  .form-mov-bloque input:checked { background: #22A65A; border-color: #22A65A; }
+  .form-mov-bloque input:checked::after { transform: rotate(45deg) scale(1); }
+  .form-mov-bloque.is-bloqueado { opacity: .38; cursor: not-allowed; }
+  .form-mov-bloque.is-bloqueado input { cursor: not-allowed; }
+  .form-mov-bloque-nombre { flex: 1; min-width: 0; }
+  .form-mov-bloque-nombre div { font-size: 15px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+  .form-mov-bloque-nombre div em { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--bg); background: var(--ink); border-radius: 99px; padding: 2px 7px; }
+  .form-mov-bloque-nombre small { display: block; font-size: 12px; color: var(--ink-dim); margin-top: 1px; }
+  .form-mov-bloque-saldo { text-align: right; font-family: var(--font-num); font-size: 15px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+  .form-mov-bloque:not(:has(input:checked)) .form-mov-bloque-saldo { color: var(--ink-mute); }
+  .form-mov-bloque-saldo small { display: block; font-size: 11px; font-weight: 700; color: #C0392B; }
+  .form-mov-bloque-saldo small:empty { display: none; }
+  .form-mov-bloques-nota { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 6px 2px 0; font-size: 11.5px; color: var(--ink-dim); line-height: 1.4; }
+  .form-mov-bloques-todos { flex: 0 0 auto; padding: 0; border: 0; background: none; font: inherit; font-size: 11.5px; font-weight: 650; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
   .installment-confirm-summary {
     margin: 14px 0;
@@ -8559,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '381';
+  const LEDGER_BUILD = '382';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -14052,23 +14063,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ${(() => {
         // BUILD308 · tipo editable. Sigue el ciclo de la tarjeta: solo cambia esta compra y el
         // heads-up; el Disponible actual no se toca (esta deuda se jala al abrir el próximo ciclo).
-        const tipoActual = normalizarTipoMovimiento(mov.tipo);
-        const bloqueado = !!mov.planCuotasId;
-        const opcion = (valor, texto, extra = '') => `
-          <label class="edit-type-option${extra}">
-            <input type="radio" name="editArchivedType" value="${valor}" ${tipoActual === valor ? 'checked' : ''} ${bloqueado && valor !== tipoActual ? 'disabled' : ''} onchange="toggleArchivedCardType(this.value)">
-            <span>${texto}</span>
-          </label>`;
-        return `
-      <div class="modal-field">
-        <label>Tipo</label>
-        <div class="edit-type-grid">
-          ${opcion('S', 'S · Contado')}
-          ${opcion('DS', esMovimientoAdelanto(mov) ? 'A · Adelanto' : esMovimientoDSCubierto(mov) ? 'DS+C · Tarjeta cubierta' : (esMovimientoDSPropio(mov) ? 'DS+P · 2 cuotas propias' : 'DS · Tarjeta'))}
-          ${opcion('F', 'F · Fondo')}
-          ${opcion('FDS', 'F+DS · Fondo/tarjeta', ' fds')}
-        </div>
-      </div>`;
+        // BUILD382 · mismas piezas que el formulario único (sin bloques: es de un ciclo anterior).
+        const tipoActual = valorTipoFormMov(mov);
+        const permitidos = mov.planCuotasId ? [tipoActual]
+          : [...new Set(['S', tipoActual === 'DSC' || tipoActual === 'DSP' ? tipoActual : 'DS', 'F', 'FDS'])];
+        return htmlTiposFormMov('editArchivedType', tipoActual, permitidos, 'toggleArchivedCardType(this.value)', esMovimientoAdelanto(mov) ? { DSC: 'A · Adelanto' } : {});
       })()}
       <div class="modal-field">
         <label>Detalle</label>
@@ -14078,25 +14077,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <label>Categoría</label>
         <select id="editArchivedCardCategory">${opcionesCategoriaMovimiento(mov.categoria)}</select>
       </div>
-      <div class="modal-field" id="editArchivedCardBankRow">
-        <label>Tarjeta</label>
-        <select id="editArchivedCardBank">
-          <option value="interbank" ${tarjetaIdMovimiento(vistaTarjetaDeMovimiento(mov)) !== 'bcp' ? 'selected' : ''}>Interbank</option>
-          <option value="bcp" ${tarjetaIdMovimiento(vistaTarjetaDeMovimiento(mov)) === 'bcp' ? 'selected' : ''}>BCP</option>
-        </select>
-      </div>
+      ${htmlTarjetaFormMov('editArchivedCardBank', 'editArchivedCardBankRow', tarjetaIdMovimiento(vistaTarjetaDeMovimiento(mov)))}
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button class="btn-primary" onclick="saveArchivedCardMovementEdit('${refCodificada}', ${Number(idx)})">Guardar cambios</button>
+        <button class="btn-primary" onclick="saveArchivedCardMovementEdit('${refCodificada}', ${Number(idx)})">Guardar</button>
       </div>
+      <button type="button" class="bandeja-descartar" onclick="closeModal(); confirmDeleteArchivedCardMovement('${refCodificada}', ${Number(idx)})">Eliminar movimiento</button>
     `);
     updateEditMovementUsdPreview();
-    toggleArchivedCardType(normalizarTipoMovimiento(mov.tipo));
+    toggleArchivedCardType(valorTipoFormMov(mov));
   }
 
   function toggleArchivedCardType(tipo) {
     const row = document.getElementById('editArchivedCardBankRow');
-    const t = normalizarTipoMovimiento(tipo);
+    const t = tipoBaseFormMov(tipo); // BUILD382
     if (row) row.style.display = (t === 'DS' || t === 'FDS') ? '' : 'none';
   }
 
@@ -14137,7 +14131,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const categoria = normalizarCategoriaMovimiento(document.getElementById('editArchivedCardCategory')?.value);
     if (categoria) mov.categoria = categoria; else delete mov.categoria;
     // BUILD308 · tipo. S o F sacan la compra de la deuda (y del heads-up); DS y F+DS la mantienen.
-    const tipoElegido = document.querySelector('input[name="editArchivedType"]:checked')?.value || normalizarTipoMovimiento(mov.tipo);
+    const tipoElegido = tipoBaseFormMov(document.querySelector('input[name="editArchivedType"]:checked')?.value) || normalizarTipoMovimiento(mov.tipo); // BUILD382
     const tipoNuevo = ['S', 'DS', 'F', 'FDS'].includes(tipoElegido) ? tipoElegido : normalizarTipoMovimiento(mov.tipo);
     if (tipoNuevo !== normalizarTipoMovimiento(mov.tipo)) {
       mov.tipo = tipoNuevo;
@@ -14181,6 +14175,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const preview = document.getElementById('projectedFinalTcPreview');
     if (!input || !toggle || !label || !preview) return;
 
+    try { actualizarBloquesFormMov(); } catch (e) {} // BUILD382
     const esUSD = projectedFinalCurrency === 'USD';
     label.textContent = esUSD ? 'US$' : 'S/';
     toggle.classList.toggle('usd', esUSD);
@@ -14264,22 +14259,19 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ? ` · Original: <strong>US$ ${fmt(infoMoneda.montoOriginal)}</strong>${Number(tcOriginal) > 0 ? ` @ ${Number(tcOriginal).toFixed(3)}` : ''}`
       : '';
 
+    // BUILD382 · formulario único: mismo orden que los demás; "Guardar categoría" pasa a enlace.
+    const bloquesHtml = htmlBloquesFormMov({
+      fecha: new Date(),
+      simular: false,
+      monto: () => {
+        const v = Number(document.getElementById('projectedFinalAmount')?.value) || 0;
+        const tc = projectedApiExchangeRate();
+        return projectedFinalCurrency === 'USD' ? (tc ? v * tc : 0) : v;
+      }
+    });
     openModal(`
       <h2>Realizar <span class="accent">proyectado</span></h2>
       <p class="modal-sub">S/ ${fmt(mov.monto)} ya están reservados del presupuesto${referenciaOriginal}. Al confirmar, se registrará el gasto real.</p>
-      <div class="modal-field">
-        <label>Tipo final</label>
-        <div class="edit-type-grid">
-          <label class="edit-type-option">
-            <input type="radio" name="projectedFinalType" value="DS" checked onchange="setProjectedFinalType(this.value)">
-            <span>DS · Tarjeta</span>
-          </label>
-          <label class="edit-type-option">
-            <input type="radio" name="projectedFinalType" value="S" onchange="setProjectedFinalType(this.value)">
-            <span>S · Contado</span>
-          </label>
-        </div>
-      </div>
       <div class="modal-field">
         <label>Monto final</label>
         <div class="projected-final-amount-wrap">
@@ -14290,6 +14282,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>
         <div class="projected-final-tc-preview" id="projectedFinalTcPreview"></div>
       </div>
+      ${htmlTiposFormMov('projectedFinalType', 'DS', ['S', 'DS'], 'setProjectedFinalType(this.value)')}
       <div class="modal-field">
         <label>Detalle</label>
         <input type="text" id="projectedFinalDetail" value="${escapeHtml(mov.detalle || '')}" autocomplete="off">
@@ -14298,18 +14291,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <label>Categoría</label>
         <select id="projectedFinalCategory">${opcionesCategoriaMovimiento(mov.categoria)}</select>
       </div>
-      <div class="modal-field" id="projectedFinalCardRow">
-        <label>Tarjeta</label>
-        <select id="projectedFinalCard">
-          <option value="interbank">Interbank</option>
-          <option value="bcp">BCP</option>
-        </select>
-      </div>
-      <div class="modal-buttons modal-buttons-three">
+      ${htmlTarjetaFormMov('projectedFinalCard', 'projectedFinalCardRow', 'interbank')}
+      ${bloquesHtml}
+      <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button class="btn-secondary" onclick="guardarCategoriaProyectado(${idx})">Guardar categoría</button>
         <button class="btn-primary" id="projectedFinalSubmit" onclick="realizarMovimientoProyectado(${idx})">Realizar DS</button>
       </div>
+      <button type="button" class="bandeja-descartar" onclick="guardarCategoriaProyectado(${idx})">Guardar solo la categoría</button>
     `);
 
     requestAnimationFrame(() => {
@@ -14353,6 +14341,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     let detalle = String(document.getElementById('projectedFinalDetail')?.value || '').trim();
     const categoria = normalizarCategoriaMovimiento(document.getElementById('projectedFinalCategory')?.value);
     const tarjetaId = normalizarTarjetaId(document.getElementById('projectedFinalCard')?.value || 'interbank');
+    const bloques = bloquesRegistroFormMov(); // BUILD382 · de qué bloque(s) sale el gasto real
     if (!Number.isFinite(montoIngresado) || montoIngresado <= 0) {
       toast('Ingresa un monto válido', true);
       return;
@@ -14379,8 +14368,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       restoreMovementState(reconstruido.rebuiltState);
       state.log = reconstruido.rebuiltLog;
       state.redoMovement = null;
-      const ok = aplicarMovimiento(monto, tipoFinal, null, detalle, {
+      const ok = aplicarMovimiento(monto, tipoFinal, bloques.etiqueta, detalle, {
         fecha: new Date(),
+        bloqueElegido: bloques.bloqueElegido, // BUILD382
         renderizar: false,
         notificar: false,
         metadata: {
@@ -14430,33 +14420,32 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       return;
     }
 
-    // Fuera de los últimos 10 no se toca ningún dato financiero.
-    // Categoría y tarjeta son metadata y pueden corregirse durante todo el ciclo.
+    // BUILD382 · formulario único. Las cuotas de planes del banco solo cambian categoría y tarjeta:
+    // mismo formulario, con monto, tipo y detalle fijos.
     if (!getEditableMovementIndices().includes(idx)) {
       const tarjetaActual = tarjetaIdMovimiento(mov) || 'interbank';
       openModal(`
-        <h2>Editar <span class="accent">datos</span></h2>
-        <p class="modal-sub">${escapeHtml(mov.detalle || 'Sin detalle')} · ${escapeHtml(mov.fecha || '')}</p>
+        <h2>Editar <span class="accent">movimiento</span></h2>
+        <p class="modal-sub">${escapeHtml(mov.fecha || '')} · cuota de un plan del banco. Solo se cambian categoría y tarjeta.</p>
+        <div class="modal-field">
+          <label>Monto</label>
+          <div class="form-mov-monto-fijo">S/${fmt(Number(mov.monto) || 0)}</div>
+        </div>
+        ${htmlTiposFormMov('editMovementTypeOnly', valorTipoFormMov(mov), [])}
+        <div class="modal-field">
+          <label>Detalle</label>
+          <input type="text" value="${escapeHtml(mov.detalle || '')}" disabled>
+        </div>
         <div class="modal-field">
           <label>Categoría</label>
           <select id="editMovementCategoryOnly">${opcionesCategoriaMovimiento(mov.categoria)}</select>
         </div>
-        ${esMovimientoTarjeta(mov) ? `
-          <div class="modal-field">
-            <label>Tarjeta</label>
-            <select id="editMovementCardOnly">
-              <option value="interbank" ${tarjetaActual === 'interbank' ? 'selected' : ''}>Interbank</option>
-              <option value="bcp" ${tarjetaActual === 'bcp' ? 'selected' : ''}>BCP</option>
-            </select>
-          </div>
-        ` : ''}
-        <p class="modal-sub" style="font-size:11px;">Monto y tipo solo pueden modificarse en los últimos 10 movimientos.</p>
+        ${esMovimientoTarjeta(mov) ? htmlTarjetaFormMov('editMovementCardOnly', 'editMovementCardOnlyRow', tarjetaActual) : ''}
         <div class="modal-buttons">
           <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
           <button class="btn-primary" onclick="saveMovementCategoryOnly(${idx})">Guardar</button>
         </div>
       `);
-      requestAnimationFrame(() => document.getElementById('editMovementCategoryOnly')?.focus());
       return;
     }
 
@@ -14464,19 +14453,35 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       toast('Este movimiento no se puede editar', true);
       return;
     }
+    // BUILD304 · selector S/ · US$ igual que al registrar.
+    const infoUsd = infoMonedaOriginalMovimiento(mov);
+    const esUsd = infoUsd.moneda === 'USD' && Number(infoUsd.tipoCambio) > 0;
+    editMovementCurrency = esUsd ? 'USD' : 'PEN';
+    editMovementTc = esUsd ? Number(infoUsd.tipoCambio) : null;
+    const valor = esUsd ? Number(infoUsd.montoOriginal) : Number(mov.monto);
+    const tipoForm = valorTipoFormMov(mov);
+    const permitidos = mov.adelantoOrigenId ? ['DS']
+      : esCuotaPropia ? ['DSP']
+        : esMovimientoDSCubierto(mov) ? ['S', 'DSC', 'F', 'FDS']
+          : ['S', 'DS', 'F', 'FDS'];
+    const elegidos = mov.etiqueta === 'sem' ? null
+      : (Array.isArray(mov.bloqueElegido) ? mov.bloqueElegido : (Number.isInteger(mov.bloqueElegido) ? [mov.bloqueElegido] : undefined));
+    const bloquesHtml = htmlBloquesFormMov({
+      fecha: fechaMovimientoEdicion(mov),
+      elegidos,
+      simular: false,
+      yaIncluido: true,
+      monto: () => {
+        const v = Number(document.getElementById('editMovementAmount')?.value) || 0;
+        const soles = editMovementCurrency === 'USD' && Number(editMovementTc) > 0 ? v * Number(editMovementTc) : v;
+        return esCuotaPropia ? dividirCuotaPropia(soles).actual : soles;
+      }
+    });
     openModal(`
       <h2>Editar <span class="accent">movimiento</span></h2>
       <p class="modal-sub">${esCuotaPropia
         ? `DS+P · el monto se vuelve a dividir 50/50 y permanece como variante de DS.`
         : `Se conservará la fecha ${escapeHtml(mov.fecha || '')}. Solo cambios de monto, tipo o bloques recalculan movimientos posteriores.`}</p>
-      ${(() => {
-        // BUILD304 · selector S/ · US$ igual que al registrar.
-        const infoUsd = infoMonedaOriginalMovimiento(mov);
-        const esUsd = infoUsd.moneda === 'USD' && Number(infoUsd.tipoCambio) > 0;
-        editMovementCurrency = esUsd ? 'USD' : 'PEN';
-        editMovementTc = esUsd ? Number(infoUsd.tipoCambio) : null;
-        const valor = esUsd ? Number(infoUsd.montoOriginal) : Number(mov.monto);
-        return `
       <div class="modal-field">
         <label id="editMovementAmountLabel">Monto</label>
         <div class="projected-final-amount-wrap">
@@ -14484,29 +14489,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <input type="number" id="editMovementAmount" min="0.01" step="0.01" inputmode="decimal" value="${Number(valor).toFixed(2)}" oninput="updateEditMovementUsdPreview()" style="padding-left:68px;">
         </div>
         <div class="projected-final-tc-preview${esUsd ? ' visible' : ''}" id="editMovementUsdPreview"></div>
-      </div>`;
-      })()}
-      <div class="modal-field">
-        <label>Tipo</label>
-        <div class="edit-type-grid">
-          <label class="edit-type-option">
-            <input type="radio" name="editMovementType" value="S" ${mov.tipo === 'S' ? 'checked' : ''} ${esCuotaPropia || mov.adelantoOrigenId ? 'disabled' : ''}>
-            <span>S · Contado</span>
-          </label>
-          <label class="edit-type-option">
-            <input type="radio" name="editMovementType" value="DS" ${mov.tipo === 'DS' ? 'checked' : ''}>
-            <span>${esMovimientoAdelanto(mov) ? 'A · Adelanto' : esMovimientoDSCubierto(mov) ? 'DS+C · Tarjeta cubierta' : (esMovimientoDSPropio(mov) ? 'DS+P · 2 cuotas propias' : 'DS · Tarjeta')}</span>
-          </label>
-          <label class="edit-type-option">
-            <input type="radio" name="editMovementType" value="F" ${mov.tipo === 'F' ? 'checked' : ''} ${esCuotaPropia || mov.adelantoOrigenId ? 'disabled' : ''}>
-            <span>F · Fondo</span>
-          </label>
-          <label class="edit-type-option fds">
-            <input type="radio" name="editMovementType" value="FDS" ${normalizarTipoMovimiento(mov.tipo) === 'FDS' ? 'checked' : ''} ${esCuotaPropia || mov.adelantoOrigenId ? 'disabled' : ''}>
-            <span>F+DS · Fondo/tarjeta</span>
-          </label>
-        </div>
       </div>
+      ${htmlTiposFormMov('editMovementType', tipoForm, permitidos, 'toggleEditFundType(this.value)', esMovimientoAdelanto(mov) ? { DSC: 'A · Adelanto' } : {})}
       <div class="modal-field">
         <label>Detalle</label>
         <input type="text" id="editMovementDetail" value="${escapeHtml(mov.detalle || '')}" autocomplete="off">
@@ -14515,19 +14499,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <label>Categoría</label>
         <select id="editMovementCategory">${opcionesCategoriaMovimiento(mov.categoria)}</select>
       </div>
-      <div class="modal-field" id="editMovementCardRow">
-        <label>Tarjeta</label>
-        <select id="editMovementCard">
-          <option value="interbank" ${tarjetaIdMovimiento(mov) !== 'bcp' ? 'selected' : ''}>Interbank</option>
-          <option value="bcp" ${tarjetaIdMovimiento(mov) === 'bcp' ? 'selected' : ''}>BCP</option>
-        </select>
-      </div>
-      <label class="edit-sem-row" id="editMovementSemRow">
-        <span>Repartir entre los bloques restantes</span>
-        <input type="checkbox" id="editMovementSem" ${mov.etiqueta === 'sem' ? 'checked' : ''} ${esMovimientoDSCubierto(mov) ? 'disabled' : ''} onchange="cambioSemEdicion()">
-      </label>
-      ${esMovimientoDSCubierto(mov) ? '' : htmlBloquesEdicion(mov)}
-      ${esMovimientoDSCubierto(mov) ? `<label class="edit-sem-row" id="editMovementAdvanceRow">
+      ${htmlTarjetaFormMov('editMovementCard', 'editMovementCardRow', tarjetaIdMovimiento(mov))}
+      ${bloquesHtml}
+      ${esMovimientoDSCubierto(mov) ? `<label class="edit-sem-row" id="editMovementAdvanceRow" style="margin-bottom:8px;">
         <span>A · Lo pago con el próximo sueldo</span>
         <input type="checkbox" id="editMovementAdvance" ${esMovimientoAdelanto(mov) ? 'checked' : ''}>
       </label>` : ''}
@@ -14537,14 +14511,27 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </label>
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button class="btn-primary" onclick="saveMovementEdit(${idx})">Guardar cambios</button>
+        <button class="btn-primary" onclick="saveMovementEdit(${idx})">Guardar</button>
       </div>
+      <button type="button" class="bandeja-descartar" onclick="closeModal(); confirmDelete(${idx})">Eliminar movimiento</button>
     `);
-    document.querySelectorAll('input[name="editMovementType"]').forEach(input => {
-      input.addEventListener('change', () => toggleEditFundType(input.value));
-    });
-    toggleEditFundType(mov.tipo);
+    toggleEditFundType(tipoForm);
     updateEditMovementUsdPreview();
+  }
+
+  // BUILD382 · valor del formulario único para un movimiento guardado.
+  function valorTipoFormMov(mov) {
+    const t = normalizarTipoMovimiento(mov?.tipo);
+    if (t !== 'DS') return t;
+    if (mov.adelantoOrigenId) return 'DS';
+    if (esMovimientoDSCubierto(mov)) return 'DSC';
+    if (esMovimientoDSPropio(mov) || esMovimientoCuotasPropias(mov)) return 'DSP';
+    return 'DS';
+  }
+
+  // DS+C y DS+P son variantes de DS.
+  function tipoBaseFormMov(valor) {
+    return valor === 'DSC' || valor === 'DSP' ? 'DS' : valor;
   }
 
   // BUILD381 · Editar movimiento: elegir de qué bloque(s) sale el gasto.
@@ -14557,80 +14544,197 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return new Date();
   }
 
-  function htmlBloquesEdicion(mov) {
-    const base = calcularSemanaIdxParaFecha(fechaMovimientoEdicion(mov));
-    const hoy = calcularSemanaIdxParaFecha(new Date());
-    const total = state.semanas.length;
-    if (base < 0 || total - base < 2) return '';
-    const elegidos = mov.etiqueta === 'sem'
-      ? null
-      : (Array.isArray(mov.bloqueElegido) ? mov.bloqueElegido.map(Number) : (Number.isInteger(mov.bloqueElegido) ? [mov.bloqueElegido] : [base]));
-    const pills = [];
-    for (let i = base; i < total; i++) {
-      const bloqueado = i > base && hoy >= 0 && i < hoy;
-      const marcado = elegidos ? elegidos.includes(i) : true;
-      pills.push(`<label class="edit-block-pill"><input type="checkbox" name="editMovementBlock" value="${i}" ${marcado ? 'checked' : ''} ${bloqueado ? 'disabled' : ''} onchange="cambioBloqueEdicion(this)"><span>${i + 1}</span></label>`);
-    }
-    return `<div class="edit-blocks-row" id="editMovementBlocksRow" data-base="${base}" data-hoy="${hoy}">
-        <div class="edit-blocks-head"><span>¿De qué bloques sale?</span><b id="editMovementBlocksResumen"></b></div>
-        <div class="edit-blocks-pills">${pills.join('')}</div>
+  // ============ BUILD382 · FORMULARIO ÚNICO DE MOVIMIENTO ============
+  // Confirmar consumo, Asignar adelanto, Editar movimiento (actual y archivado) y Realizar proyectado
+  // comparten el mismo orden y las mismas piezas: monto, tipo, detalle, categoría, tarjeta y bloques.
+  // Solo cambian el título, lo que viene fijo, el botón principal y el enlace de abajo.
+  const TIPOS_FORM_MOV = [
+    ['S', 'S · Contado'], ['DS', 'DS · Tarjeta'],
+    ['DSC', 'DS+C · Cubierta'], ['DSP', 'DS+P · 2 cuotas'],
+    ['F', 'F · Fondo'], ['FDS', 'F+DS · Fondo']
+  ];
+
+  // elegido: valor marcado; permitidos: valores que se pueden tocar (el resto se ve apagado).
+  function htmlTiposFormMov(name, elegido, permitidos, onchange = '', etiquetas = {}) {
+    return `<div class="modal-field">
+        <label>Tipo</label>
+        <div class="edit-type-grid">${TIPOS_FORM_MOV.map(([valor, texto]) => `
+          <label class="edit-type-option${valor === 'FDS' ? ' fds' : ''}">
+            <input type="radio" name="${name}" value="${valor}" ${valor === elegido ? 'checked' : ''} ${permitidos.includes(valor) ? '' : 'disabled'}${onchange ? ` onchange="${onchange}"` : ''}>
+            <span>${etiquetas[valor] || texto}</span>
+          </label>`).join('')}
+        </div>
       </div>`;
   }
 
-  function bloquesEdicionInputs() {
-    return [...document.querySelectorAll('input[name="editMovementBlock"]')];
+  function htmlTarjetaFormMov(selectId, rowId, actual) {
+    const t = normalizarTarjetaId(actual || 'interbank');
+    return `<div class="modal-field" id="${rowId}">
+        <label>Tarjeta</label>
+        <select id="${selectId}">
+          <option value="interbank" ${t !== 'bcp' ? 'selected' : ''}>Interbank</option>
+          <option value="bcp" ${t === 'bcp' ? 'selected' : ''}>BCP</option>
+        </select>
+      </div>`;
   }
 
-  function resumenBloquesEdicion() {
-    const el = document.getElementById('editMovementBlocksResumen');
-    const row = document.getElementById('editMovementBlocksRow');
-    if (!el || !row) return;
-    const inputs = bloquesEdicionInputs();
-    const marcados = inputs.filter(i => i.checked).map(i => Number(i.value));
-    const hoy = Number(row.dataset.hoy);
-    if (marcados.length === inputs.length) el.textContent = 'Todos';
-    else if (marcados.length === 1) el.textContent = `Bloque ${marcados[0] + 1}${marcados[0] === hoy ? ' · actual' : ''}`;
-    else el.textContent = etiquetaBloquesElegidos(marcados);
+  function textoRangoBloque(rango, esHoy) {
+    if (!rango?.inicio || !rango?.fin) return '';
+    const ini = new Date(rango.inicio), fin = new Date(rango.fin);
+    const mes = d => d.toLocaleString('es-PE', { month: 'short' }).replace('.', '').toLowerCase();
+    const fechas = ini.getMonth() === fin.getMonth()
+      ? `${ini.getDate()}–${fin.getDate()} ${mes(fin)}`
+      : `${ini.getDate()} ${mes(ini)} – ${fin.getDate()} ${mes(fin)}`;
+    if (esHoy) {
+      const quedan = Math.max(1, Math.round((inicioDelDia(fin) - inicioDelDia(new Date())) / MS_DIA) + 1);
+      return `${fechas} · ${quedan === 1 ? 'queda 1 día' : `quedan ${quedan} días`}`;
+    }
+    return `${fechas} · ${rango.dias || 7} días`;
   }
 
-  function cambioBloqueEdicion(input) {
-    const inputs = bloquesEdicionInputs();
+  // Contexto de la lista de bloques del formulario abierto.
+  // fecha: fecha del gasto (su bloque es el primero de la lista); elegidos: null = todos (sem), lista, o sin dar = su bloque;
+  // monto(): monto que afecta el presupuesto; simular: true si el gasto aún no está registrado
+  // (las partes se calculan contra el saldo real); soloBaseOTodos: gasto de un día anterior.
+  let formMovCtx = null;
+
+  function htmlBloquesFormMov(o) {
+    formMovCtx = null;
+    const base = calcularSemanaIdxParaFecha(o.fecha || new Date());
+    const hoy = calcularSemanaIdxParaFecha(new Date());
+    const total = Array.isArray(state.semanas) ? state.semanas.length : 0;
+    if (base < 0 || total - base < 2) return '';
+    formMovCtx = { ...o, base, hoy };
+    const rangos = calcularRangoSemanas();
+    const filas = [];
+    for (let i = base; i < total; i++) {
+      // Bloques ya terminados (o, en un gasto de un día anterior, cualquiera que no sea el suyo)
+      // solo entran con "Todos": su saldo ya pasó al siguiente.
+      const bloqueado = i > base && ((hoy >= 0 && i < hoy) || !!o.soloBaseOTodos);
+      const marcado = o.elegidos === null ? true : (o.elegidos || [base]).map(Number).includes(i);
+      const saldo = Math.max(0, Number(state.semanas[i]?.presupuesto) || 0);
+      filas.push(`<label class="form-mov-bloque${bloqueado ? ' is-bloqueado' : ''}">
+          <input type="checkbox" name="formMovBloque" value="${i}" ${marcado ? 'checked' : ''} ${bloqueado ? 'disabled' : ''} onchange="cambioBloqueFormMov(this)">
+          <span class="form-mov-bloque-nombre"><div>Bloque ${i + 1}${i === hoy ? '<em>actual</em>' : ''}</div><small>${escapeHtml(textoRangoBloque(rangos[i], i === hoy))}</small></span>
+          <span class="form-mov-bloque-saldo">S/${fmt(saldo)}<small data-parte="${i}"></small></span>
+        </label>`);
+    }
+    return `<div class="form-mov-bloques" id="formMovBloques">
+        <div class="form-mov-bloques-head"><span class="form-mov-bloques-titulo">¿De qué bloques sale?</span><b id="formMovBloquesResumen"></b></div>
+        <div class="form-mov-bloques-lista">${filas.join('')}</div>
+        <div class="form-mov-bloques-nota"><span id="formMovBloquesNota"></span><button type="button" class="form-mov-bloques-todos" id="formMovBloquesTodos" onclick="todosBloquesFormMov()">Marcar todos</button></div>
+      </div>`;
+  }
+
+  function bloquesFormMovInputs() {
+    return [...document.querySelectorAll('input[name="formMovBloque"]')];
+  }
+
+  function cambioBloqueFormMov(input) {
+    const inputs = bloquesFormMovInputs();
     if (!inputs.some(i => i.checked)) { input.checked = true; toast('Elige al menos un bloque', true); }
-    const todos = inputs.every(i => i.checked);
-    // Fuera de "Todos", los bloques ya terminados no quedan marcados.
-    if (!todos) inputs.forEach(i => { if (i.disabled) i.checked = false; });
-    if (!inputs.some(i => i.checked)) {
-      const base = inputs.find(i => Number(i.value) === Number(document.getElementById('editMovementBlocksRow')?.dataset.base));
+    // Fuera de "Todos", los bloques bloqueados no quedan marcados.
+    if (!inputs.every(i => i.checked)) inputs.forEach(i => { if (i.disabled) i.checked = false; });
+    if (!inputs.some(i => i.checked) && formMovCtx) {
+      const base = inputs.find(i => Number(i.value) === formMovCtx.base);
       if (base) base.checked = true;
     }
-    const sem = document.getElementById('editMovementSem');
-    if (sem && !sem.disabled) sem.checked = inputs.every(i => i.checked);
-    resumenBloquesEdicion();
+    actualizarBloquesFormMov();
   }
 
-  function cambioSemEdicion() {
-    const sem = document.getElementById('editMovementSem');
-    const row = document.getElementById('editMovementBlocksRow');
-    if (!sem || !row) return;
-    const base = Number(row.dataset.base);
-    bloquesEdicionInputs().forEach(i => { i.checked = sem.checked ? true : Number(i.value) === base; });
-    resumenBloquesEdicion();
+  function todosBloquesFormMov() {
+    const inputs = bloquesFormMovInputs();
+    if (!inputs.length || !formMovCtx) return;
+    const todos = inputs.every(i => i.checked);
+    inputs.forEach(i => { i.checked = todos ? Number(i.value) === formMovCtx.base : true; });
+    actualizarBloquesFormMov();
   }
 
-  // Devuelve { etiqueta, bloqueElegido } según la fila de bloques (o null si no hay fila).
-  function bloquesElegidosEdicion(mov) {
-    const row = document.getElementById('editMovementBlocksRow');
-    if (!row || row.classList.contains('is-off')) return null;
-    const inputs = bloquesEdicionInputs();
+  // Resumen arriba, "−S/ x" por bloque marcado y nota abajo. Se llama también al cambiar monto o tipo.
+  function actualizarBloquesFormMov() {
+    const row = document.getElementById('formMovBloques');
+    if (!row || !formMovCtx) return;
+    const inputs = bloquesFormMovInputs();
     const marcados = inputs.filter(i => i.checked).map(i => Number(i.value)).sort((a, b) => a - b);
-    if (marcados.length === inputs.length) return { etiqueta: 'sem', bloqueElegido: null };
-    return { etiqueta: null, bloqueElegido: bloqueElegidoValido(marcados, fechaMovimientoEdicion(mov), null) };
+    const todos = marcados.length === inputs.length;
+    const { base, hoy } = formMovCtx;
+    const resumen = document.getElementById('formMovBloquesResumen');
+    if (resumen) {
+      resumen.textContent = todos ? 'Todos · sem'
+        : (marcados.length === 1 ? `Bloque ${marcados[0] + 1}${marcados[0] === hoy ? ' · actual' : ''}` : etiquetaBloquesElegidos(marcados));
+    }
+    const boton = document.getElementById('formMovBloquesTodos');
+    if (boton) boton.textContent = todos ? (base === hoy ? 'Solo el actual' : `Solo el bloque ${base + 1}`) : 'Marcar todos';
+    row.querySelectorAll('[data-parte]').forEach(el => { el.textContent = ''; });
+    let monto = 0;
+    try { monto = Number(formMovCtx.monto?.()) || 0; } catch (e) {}
+    let exceso = 0;
+    if (monto > 0 && marcados.length) {
+      let partes;
+      if (formMovCtx.simular) {
+        const sim = JSON.parse(JSON.stringify(state.semanas));
+        const r = restarGastoDivididoEntreIndices(sim, monto, marcados);
+        partes = r.repartos.map(rep => [rep.index, rep.descuento]);
+        exceso = r.exceso;
+      } else {
+        // Gasto ya registrado: su parte en partes iguales (el saldo mostrado ya lo incluye).
+        partes = marcados.map(i => [i, monto / marcados.length]);
+      }
+      partes.forEach(([i, d]) => {
+        const el = row.querySelector(`[data-parte="${i}"]`);
+        if (el && d > 0.004) el.textContent = `−S/${fmt(d)}`;
+      });
+    }
+    const nota = document.getElementById('formMovBloquesNota');
+    if (nota) {
+      nota.textContent = exceso > 0.005
+        ? `Faltan S/${fmt(exceso)}: se aplica el rollover de siempre.`
+        : todos ? 'Se reparte entre todos los bloques restantes.'
+          : marcados.length > 1 ? 'Partes iguales; si uno no alcanza, el faltante pasa al siguiente.'
+            : (formMovCtx.yaIncluido ? 'El saldo de cada bloque ya incluye este gasto.' : 'Marca varios para repartirlo en partes iguales.');
+    }
+  }
+
+  // Muestra u oculta la lista (solo S, DS y DS+P tocan bloques).
+  function mostrarBloquesFormMov(visible) {
+    const row = document.getElementById('formMovBloques');
+    if (!row) return;
+    row.hidden = !visible;
+    if (visible) actualizarBloquesFormMov();
+  }
+
+  // null si no hay lista (o está oculta); si no, { todos, lista }.
+  function leerBloquesFormMov() {
+    const row = document.getElementById('formMovBloques');
+    if (!row || row.hidden) return null;
+    const inputs = bloquesFormMovInputs();
+    const lista = inputs.filter(i => i.checked).map(i => Number(i.value)).sort((a, b) => a - b);
+    if (!lista.length) return null;
+    return { todos: lista.length === inputs.length, lista };
+  }
+
+  // Para registrar (correo, adelanto, proyectado): { etiqueta, bloqueElegido } como el registro rápido.
+  // Todos = "sem" (en DS+P, que no lleva "sem", la lista completa reparte igual); uno o varios = bloqueElegido.
+  function bloquesRegistroFormMov(cuotaPropia = false) {
+    const sel = leerBloquesFormMov();
+    if (!sel) return { etiqueta: null, bloqueElegido: null };
+    if (sel.todos && !cuotaPropia) return { etiqueta: 'sem', bloqueElegido: null };
+    return { etiqueta: null, bloqueElegido: sel.lista.length === 1 ? sel.lista[0] : sel.lista };
+  }
+
+  // Editar movimiento: { etiqueta, bloqueElegido } según la lista (o null si no hay lista).
+  function bloquesElegidosEdicion(mov) {
+    const sel = leerBloquesFormMov();
+    if (!sel) return null;
+    if (sel.todos) return { etiqueta: 'sem', bloqueElegido: null };
+    return { etiqueta: null, bloqueElegido: bloqueElegidoValido(sel.lista, fechaMovimientoEdicion(mov), null) };
   }
 
   let editMovementCurrency = 'PEN';
   let editMovementTc = null;
 
   function updateEditMovementUsdPreview() {
+    try { actualizarBloquesFormMov(); } catch (e) {} // BUILD382 · el "−S/" de cada bloque sigue al monto
     const input = document.getElementById('editMovementAmount');
     const preview = document.getElementById('editMovementUsdPreview');
     const toggle = document.getElementById('editMovementCurrencyToggle');
@@ -14716,23 +14820,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     render();
   }
 
-  function toggleEditFundType(tipo) {
-    const sem = document.getElementById('editMovementSem');
-    const row = document.getElementById('editMovementSemRow');
+  // BUILD382 · el formulario sigue al tipo: tarjeta solo en tipos de tarjeta; bloques solo en S, DS y DS+P.
+  function toggleEditFundType(valor) {
     const cardRow = document.getElementById('editMovementCardRow');
-    const tipoNormalizado = normalizarTipoMovimiento(tipo);
-    const esFondo = tipoNormalizado === 'F' || tipoNormalizado === 'FDS';
-    const esTarjeta = tipoNormalizado === 'DS' || tipoNormalizado === 'FDS';
-    if (sem && row) {
-      if (esFondo) sem.checked = false;
-      sem.disabled = esFondo;
-      row.style.opacity = esFondo ? '0.42' : '1';
-    }
+    const esTarjeta = ['DS', 'DSC', 'DSP', 'FDS'].includes(valor);
     if (cardRow) cardRow.style.display = esTarjeta ? '' : 'none';
-    // BUILD381 · la fila de bloques sigue a "Repartir": F y F+DS no tocan bloques.
-    const blocksRow = document.getElementById('editMovementBlocksRow');
-    if (blocksRow) blocksRow.classList.toggle('is-off', esFondo);
-    resumenBloquesEdicion();
+    mostrarBloquesFormMov(['S', 'DS', 'DSP'].includes(valor));
   }
 
   function saveMovementEdit(idx) {
@@ -14745,7 +14838,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const tcUsdEdicion = Number(editMovementTc);
     const editaUsd = editMovementCurrency === 'USD' && tcUsdEdicion > 0;
     const monto = editaUsd ? redondearDinero(valorIngresado * tcUsdEdicion) : valorIngresado;
-    const tipo = document.querySelector('input[name="editMovementType"]:checked')?.value;
+    const tipo = tipoBaseFormMov(document.querySelector('input[name="editMovementType"]:checked')?.value); // BUILD382 · DS+C/DS+P son DS
     let detalle = document.getElementById('editMovementDetail')?.value.trim() || '';
     const valorValido = Number.isFinite(valorIngresado) && valorIngresado > 0;
     if (valorValido) detalle = editaUsd ? detalleConUsdActualizado(detalle, valorIngresado, tcUsdEdicion) : detalleSinUsd(detalle);
@@ -14759,7 +14852,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       : '';
     const editCubierto = tipo === 'DS' && esMovimientoDSCubierto(state.log[idx]);
     const editAdelanto = editCubierto && !!document.getElementById('editMovementAdvance')?.checked; // BUILD330
-    let etiqueta = !editCubierto && afectaPresupuestoSalarial(tipo) && document.getElementById('editMovementSem')?.checked ? 'sem' : null;
+    // BUILD382 · sin lista de bloques (queda un solo bloque) se conserva el "sem" que tenía.
+    let etiqueta = !editCubierto && afectaPresupuestoSalarial(tipo) && state.log[idx]?.etiqueta === 'sem' ? 'sem' : null;
     // BUILD381 · bloques elegidos en el editor (sin fila: se conserva lo que tenía, salvo con "sem").
     const movParaBloques = state.log[idx];
     const eleccionBloques = !editCubierto && afectaPresupuestoSalarial(tipo) ? bloquesElegidosEdicion(movParaBloques) : null;
@@ -20879,13 +20973,16 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     bloqueLongPressTriggered = false;
     const item = adelantosPendientes().find(it => it.id === id);
     if (!item) { toast('Ese adelanto ya está asignado'); renderLog(); return; }
+    // BUILD382 · formulario único: monto y tipo fijos (DS de la tarjeta de la compra, sin deuda nueva).
+    const bloquesHtml = htmlBloquesFormMov({ fecha: new Date(), simular: true, monto: () => Number(item.monto) || 0 });
     openModal(`
       <h2>Asignar <span class="accent">adelanto</span></h2>
       <p class="modal-sub"><span class="card-bank-badge bank-${normalizarTarjetaId(item.tarjetaId)}">${escapeHtml(nombreTarjeta(item.tarjetaId))}</span> Ya está en la deuda de la tarjeta. Al asignarlo sale de tu Gastable como gasto de este ciclo, una sola vez.</p>
       <div class="modal-field">
         <label>Monto</label>
-        <div style="font-size:22px;font-weight:750;font-variant-numeric:tabular-nums;">S/ ${fmt(item.monto)}</div>
+        <div class="form-mov-monto-fijo">S/${fmt(item.monto)}</div>
       </div>
+      ${htmlTiposFormMov('adelantoTipo', 'DS', [])}
       <div class="modal-field">
         <label>Detalle</label>
         <input type="text" id="adelantoDetalle" value="${escapeHtml(item.detalle)}" autocomplete="off">
@@ -20894,25 +20991,22 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <label>Categoría</label>
         <select id="adelantoCategoria">${opcionesCategoriaMovimiento(item.categoria)}</select>
       </div>
-      <div class="modal-field">
-        <label>¿De dónde sale?</label>
-        <div class="edit-type-grid">
-          <label class="edit-type-option"><input type="radio" name="adelantoBloques" value="actual" checked><span>Bloque actual</span></label>
-          <label class="edit-type-option"><input type="radio" name="adelantoBloques" value="sem"><span>Repartir (sem)</span></label>
-          <label class="edit-type-option"><input type="radio" name="adelantoBloques" value="elegir"><span>Elegir bloques…</span></label>
-        </div>
-      </div>
+      ${htmlTarjetaFormMov('adelantoTarjeta', 'adelantoTarjetaRow', item.tarjetaId)}
+      ${bloquesHtml}
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
         <button class="btn-primary" data-id="${escapeHtml(item.id)}" onclick="asignarAdelantoItem(this.dataset.id)">Asignar</button>
       </div>
     `);
+    const tarjetaSel = document.getElementById('adelantoTarjeta');
+    if (tarjetaSel) tarjetaSel.disabled = true; // la tarjeta es la de la compra original
+    actualizarBloquesFormMov();
   }
 
   function asignarAdelantoItem(id) {
     const item = adelantosPendientes().find(it => it.id === id);
     if (!item) { closeModal(); toast('Ese adelanto ya está asignado'); renderLog(); return; }
-    const modo = document.querySelector('input[name="adelantoBloques"]:checked')?.value || 'actual';
+    const bloques = bloquesRegistroFormMov(); // BUILD382 · de qué bloque(s) sale
     const detalle = (document.getElementById('adelantoDetalle')?.value || '').trim() || item.detalle;
     const categoria = normalizarCategoriaMovimiento(document.getElementById('adelantoCategoria')?.value);
     // BUILD362 · DS real (se pagó con la tarjeta), pero SIN deuda nueva: la compra original (A) ya está
@@ -20920,7 +21014,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const datosRegistro = {
       monto: item.monto,
       tipo: 'DS',
-      etiqueta: modo === 'sem' ? 'sem' : null,
+      etiqueta: bloques.etiqueta,
+      bloqueElegido: bloques.bloqueElegido,
       detalle,
       categoria,
       tarjetaId: normalizarTarjetaId(item.tarjetaId),
@@ -20931,14 +21026,6 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       tipoCambio: null
     };
     adelantoAsignacionEnCurso = { id: item.id, monto: item.monto, desde: Date.now() };
-    if (modo === 'elegir') {
-      if (!puedeElegirBloqueMovimiento(datosRegistro)) { adelantoAsignacionEnCurso = null; return; }
-      pendingQuickMovement = datosRegistro;
-      bloqueSelectorAbiertoEn = Date.now();
-      selectorBloqueModo = 'registro';
-      mostrarSelectorBloqueMovimiento();
-      return;
-    }
     closeModal();
     finalizarQuickMovement(datosRegistro);
   }
@@ -20987,17 +21074,25 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const conversion = item.moneda === 'USD'
       ? (rate ? ` ≈ S/ ${fmt(Number(item.monto) * rate)} @ ${rate.toFixed(3)}` : ' · sin tipo de cambio')
       : '';
-    const opcion = (valor, texto, extra = '') => `
-          <label class="edit-type-option${extra}">
-            <input type="radio" name="bandejaTipo" value="${valor}" ${valor === sugerido ? 'checked' : ''}>
-            <span>${texto}</span>
-          </label>`;
+    // BUILD382 · formulario único: la lista de bloques reemplaza a "Repartir" y al mantener presionado Registrar.
+    const fechaItem = new Date(item.fechaISO);
+    const bloquesHtml = htmlBloquesFormMov({
+      fecha: fechaItem,
+      simular: true,
+      soloBaseOTodos: inicioDelDia(fechaItem) < inicioDelDia(new Date()), // un día anterior: su bloque o todos
+      monto: () => {
+        const rateAhora = getExchangeRate();
+        const soles = item.moneda === 'USD' ? (rateAhora ? Number(item.monto) * rateAhora : 0) : Number(item.monto);
+        const tipoSel = document.querySelector('input[name="bandejaTipo"]:checked')?.value;
+        return tipoSel === 'DSP' ? dividirCuotaPropia(soles).actual : soles;
+      }
+    });
     openModal(`
       <h2>Confirmar <span class="accent">consumo</span></h2>
       <p class="modal-sub"><span class="card-bank-badge bank-${banco}">${escapeHtml(nombreTarjeta(banco))}</span> ${escapeHtml(fechaBandejaTexto(item))} · del correo del banco</p>
       <div class="modal-field">
         <label>Monto</label>
-        <div style="font-size:22px;font-weight:750;font-variant-numeric:tabular-nums;">${montoBandejaTexto(item)}<span style="font-size:12px;font-weight:600;color:var(--ink-mute);">${conversion}</span></div>
+        <div class="form-mov-monto-fijo">${montoBandejaTexto(item).replace(/^(S\/|US\$)\s+/, '$1')}<small>${conversion}</small></div>
       </div>
       ${parecidos.length ? `<div class="bandeja-parecido">
         <div class="bandeja-parecido-title">¿Ya lo registraste?</div>
@@ -21015,17 +21110,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>`).join('')}
         <div class="bandeja-parecido-note">"Realizar" cambia la reserva por este cobro: solo impacta la diferencia. Usa el tipo, detalle, categoría y tarjeta de abajo.</div>
       </div>` : ''}
-      <div class="modal-field">
-        <label>Tipo</label>
-        <div class="edit-type-grid">
-          ${opcion('S', 'S · Contado')}
-          ${opcion('DS', 'DS · Tarjeta')}
-          ${opcion('DSC', 'DS+C · Cubierta')}
-          ${opcion('DSP', 'DS+P · 2 cuotas')}
-          ${opcion('F', 'F · Fondo')}
-          ${opcion('FDS', 'F+DS · Fondo', ' fds')}
-        </div>
-      </div>
+      ${htmlTiposFormMov('bandejaTipo', sugerido, ['S', 'DS', 'DSC', 'DSP', 'F', 'FDS'], 'actualizarCamposBandeja(this.value)')}
       <div class="modal-field">
         <label>Detalle</label>
         <input type="text" id="bandejaDetalle" value="${escapeHtml(detalle)}" autocomplete="off">
@@ -21034,60 +21119,23 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         <label>Categoría${sugerencia.categoria ? ' <span style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-mute);">· sugerida por tus registros</span>' : ''}</label>
         <select id="bandejaCategoria">${opcionesCategoriaMovimiento(sugerencia.categoria)}</select>
       </div>
-      <div class="modal-field" id="bandejaTarjetaRow">
-        <label>Tarjeta</label>
-        <select id="bandejaTarjeta">
-          <option value="interbank" ${banco !== 'bcp' ? 'selected' : ''}>Interbank</option>
-          <option value="bcp" ${banco === 'bcp' ? 'selected' : ''}>BCP</option>
-        </select>
-      </div>
-      <label class="edit-sem-row" id="bandejaSemRow">
-        <span>Repartir entre los bloques restantes</span>
-        <input type="checkbox" id="bandejaSem">
-      </label>
+      ${htmlTarjetaFormMov('bandejaTarjeta', 'bandejaTarjetaRow', banco)}
+      ${bloquesHtml}
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button class="btn-primary" data-id="${escapeHtml(item.id)}" onclick="continuarBandejaItem(this.dataset.id)"
-          onpointerdown="startBandejaBloqueLongPress(event, this.dataset.id)"
-          onpointerup="cancelBloqueLongPress()"
-          onpointercancel="cancelBloqueLongPress()"
-          onpointerleave="cancelBloqueLongPress()"
-          oncontextmenu="return false"
-          title="Mantén presionado para elegir el bloque">Registrar</button>
+        <button class="btn-primary" data-id="${escapeHtml(item.id)}" onclick="continuarBandejaItem(this.dataset.id)">Registrar</button>
       </div>
       <button type="button" class="bandeja-descartar" data-id="${escapeHtml(item.id)}" onclick="descartarBandejaItem(this.dataset.id)">Descartar este consumo</button>
     `);
-    document.querySelectorAll('input[name="bandejaTipo"]').forEach(input => {
-      input.addEventListener('change', () => actualizarCamposBandeja(input.value));
-    });
     actualizarCamposBandeja(sugerido);
   }
 
   function actualizarCamposBandeja(eleccion) {
     const esTarjeta = eleccion === 'DS' || eleccion === 'DSC' || eleccion === 'DSP' || eleccion === 'FDS';
-    const permiteSem = eleccion === 'S' || eleccion === 'DS';
+    const permiteSem = eleccion === 'S' || eleccion === 'DS' || eleccion === 'DSP'; // BUILD382 · los que tocan bloques
     const cardRow = document.getElementById('bandejaTarjetaRow');
-    const sem = document.getElementById('bandejaSem');
-    const semRow = document.getElementById('bandejaSemRow');
     if (cardRow) cardRow.style.display = esTarjeta ? '' : 'none';
-    if (sem && semRow) {
-      if (!permiteSem) sem.checked = false;
-      sem.disabled = !permiteSem;
-      semRow.style.opacity = permiteSem ? '1' : '0.42';
-    }
-  }
-
-  // BUILD324 · mantener presionado "Registrar" abre el selector de bloque (solo S/DS, actual o futuros).
-  function startBandejaBloqueLongPress(event, id) {
-    if (event?.pointerType === 'mouse' && event.button !== 0) return;
-    clearTimeout(bloqueLongPressTimer);
-    bloqueLongPressTriggered = false;
-    try { event?.currentTarget?.setPointerCapture?.(event.pointerId); } catch (e) {}
-    bloqueLongPressTimer = setTimeout(() => {
-      bloqueLongPressTimer = null;
-      // Si el tipo elegido no admite bloque (DS+C, F, F+DS), o está marcado "Repartir", no hace nada especial.
-      if (continuarBandejaItem(id, true) === true) bloqueLongPressTriggered = true;
-    }, 520);
+    mostrarBloquesFormMov(permiteSem); // BUILD382
   }
 
   function continuarBandejaItem(id, elegirBloque = false) {
@@ -21099,7 +21147,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     let detalle = (document.getElementById('bandejaDetalle')?.value || '').trim() || detalleBandeja(item);
     const categoria = normalizarCategoriaMovimiento(document.getElementById('bandejaCategoria')?.value);
     const tarjetaId = normalizarTarjetaId(document.getElementById('bandejaTarjeta')?.value || tarjetaBandeja(item));
-    const sem = !!document.getElementById('bandejaSem')?.checked && (eleccion === 'S' || eleccion === 'DS');
+    // BUILD382 · de qué bloque(s) sale, según la lista del formulario.
+    const bloques = ['S', 'DS', 'DSP'].includes(eleccion) ? bloquesRegistroFormMov(eleccion === 'DSP') : { etiqueta: null, bloqueElegido: null };
 
     const fecha = new Date(item.fechaISO);
     const inicioCiclo = state.fechaInicioCiclo ? inicioDelDia(new Date(state.fechaInicioCiclo)) : null;
@@ -21121,7 +21170,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const datosRegistro = {
       monto,
       tipo,
-      etiqueta: sem ? 'sem' : null,
+      etiqueta: bloques.etiqueta,
+      bloqueElegido: bloques.bloqueElegido,
       detalle,
       categoria,
       tarjetaId,

@@ -8528,7 +8528,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '375';
+  const LEDGER_BUILD = '376';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16167,7 +16167,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const pPlan = r.exceso > 0 ? 100 : Math.max(0, Math.min(100, r.paraPlan / base * 100));
     const segundo = r.exceso > 0 ? { label: 'Excedes', valor: r.exceso } : { label: 'Sin asignar', valor: Math.max(0, r.sinAsignar) };
     return `<div class="ref-reparto">
-        <div class="ref-rep-grupo"><div class="ref-rep-head">Disponible <span class="ref-num">${dec(disponible)}</span></div>
+        <div class="ref-rep-grupo"><div class="ref-rep-head">Presupuesto <span class="ref-num">${dec(disponible)}</span></div>
           <div class="ref-rep-bar"><i class="plan" style="width:${pPlan}%"></i>${pPlan < 99.9 ? '<i class="libre"></i>' : ''}</div></div>
         <div class="ref-rep-grupo meta"><div class="ref-rep-head">Meta</div><div class="ref-rep-bar"><i class="meta"></i></div></div>
       </div>
@@ -16286,7 +16286,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           ${referenciasFijosAbierto ? `<div class="ref-fijos">${fijosHtml}</div>` : ''}
           ${m.adelantos > 0.005 ? `<div class="ref-calc-row"><span>− Adelantos</span>${montoPrivadoReferencias(m.adelantos, oculto)}</div>` : ''}
           <div class="ref-calc-row"><span>− Meta de ahorro${m.reduccionMeta > 0.005 ? `<span class="ref-calc-note">Reducida desde ${oculto ? 'S/ ****' : 'S/' + fmt(m.metaBase)}</span>` : ''}</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
-          <div class="ref-calc-row total"><span>= Disponible</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
+          <div class="ref-calc-row total"><span>= Presupuesto</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
           <div class="ref-calc-row"><span>− Tu plan</span>${montoPrivadoReferencias(m.suma, oculto)}</div>
           <div class="ref-calc-row total"><span>${m.exceso > 0 ? '= Excedes' : '= Sin asignar'}</span>${montoPrivadoReferencias(m.exceso > 0 ? m.exceso : m.sinAsignar, oculto)}</div>
         </div>` : ''}

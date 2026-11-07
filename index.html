@@ -7944,7 +7944,6 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-bar-row { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
 .ref-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--arc-track, var(--line)); position: relative; }
 .ref-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink); border-radius: 2px; }
-.ref-bar s { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink-mute); border-radius: 1px; }
 .ref-over { font-family: var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: -.045em; font-size: 13px; font-weight: 700; color: var(--ink-dim); white-space: nowrap; }
 .ref-row.off .ref-name, .ref-row.off .ref-amt, .ref-row.off .ref-amt b { color: var(--ink-mute); font-weight: 400; }
 .ref-row.off .ref-name { font-weight: 600; }
@@ -8528,7 +8527,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '379';
+  const LEDGER_BUILD = '380';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16049,17 +16048,6 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return tipicoDetalleReferencias().tipico;
   }
 
-  function avanceCicloReferencias() {
-    const rangos = calcularRangoSemanas();
-    if (!rangos.length) return null;
-    const inicio = inicioDelDia(rangos[0].inicio);
-    const fin = inicioDelDia(rangos[rangos.length - 1].fin);
-    const dias = Math.max(1, Math.round((fin - inicio) / MS_DIA) + 1);
-    const hoy = inicioDelDia(new Date());
-    const dia = Math.max(0, Math.min(dias, Math.round((hoy - inicio) / MS_DIA) + 1));
-    return { dia, dias, fraccion: dia / dias };
-  }
-
   function modeloReferencias() {
     const inicio = redondearDinero(Number(state.presupuestoInicial) || 0);
     // BUILD369 · fuente única: la Meta de ahorro real del ciclo (la misma de Inicio).
@@ -16336,8 +16324,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       const usados = det.ciclos.map(c => c.etiqueta).join(', ');
       html += `<div class="ref-hint">Toca el monto para escribirlo exacto. El candado evita que una categoría se ajuste sola. La rayita marca el típico: mediana de los últimos 3 ciclos completos con categorías${usados ? ` (inician ${escapeHtml(usados)})` : ''}; tócalo para ver los 3 valores.${det.omitidos ? ` ${det.omitidos === 1 ? 'Se omitió 1 ciclo sin categorías o incompleto.' : 'Se omitieron ' + det.omitidos + ' ciclos sin categorías o incompletos.'}` : ''}</div>`;
     } else {
-      const avance = avanceCicloReferencias();
-      const marca = avance ? Math.max(0, Math.min(100, avance.fraccion * 100)) : null;
+      // BUILD380 · se quitó la marca de "hoy dentro del ciclo" en las barras.
       // BUILD365 · aviso no intrusivo por categoría que pasó su referencia.
       html += m.excesos.map(x => `<div class="ref-exceso"><span>${escapeHtml(x.cat)} superó por <span class="ref-num">S/${fmt(x.exceso)}</span></span><button type="button" class="ref-exceso-btn" data-ref-exceso="${escapeHtml(x.cat)}" onclick="abrirReacomodoReferencia(this.dataset.refExceso)">Reacomodar</button></div>`).join('');
       html += m.filas.map(f => {
@@ -16347,7 +16334,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         const exceso = redondearDinero(f.gastado - f.referencia);
         const pct = Math.max(0, Math.min(100, f.gastado / f.referencia * 100));
         return `<div class="ref-row" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>S/${fmt(f.gastado)}</b> / S/${fmt(f.referencia)}</span></div>
-          <div class="ref-bar-row"><div class="ref-bar"><i style="width:${pct}%"></i>${marca !== null ? `<s style="left:${marca}%"></s>` : ''}</div>${exceso > 0.005 ? `<span class="ref-over">+S/${fmt(exceso)}</span>` : ''}</div></div>`;
+          <div class="ref-bar-row"><div class="ref-bar"><i style="width:${pct}%"></i></div>${exceso > 0.005 ? `<span class="ref-over">+S/${fmt(exceso)}</span>` : ''}</div></div>`;
       }).join('');
     }
     html += '</div>';

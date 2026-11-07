@@ -8021,6 +8021,17 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-field-big span, .ref-field-big input { font-size: 20px; }
 .hero-meta-reducida { font-weight: 400; color: var(--ink-dim); display: inline-block; }
 .ref-quedan { margin-top: 3px; }
+.ref-bento { margin: 14px 0 10px; --metric-color: var(--ink); }
+.ref-bento .bento-label { color: var(--ink-dim); }
+.ref-bento .bento-value { color: var(--ink); }
+.ref-pill { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; font-size: 14px; color: var(--ink); }
+.ref-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink); align-self: center; }
+.ref-pill strong { font-size: 15px; font-weight: 700; }
+.ref-pill-sub { font-size: 12px; color: var(--ink-mute); }
+.ref-summary .ref-aviso { margin-top: 8px; }
+.ref-calc-row.sub { padding: 3px 0 3px 12px; font-size: 13px; }
+.ref-calc-row.sub .ref-num { font-size: 13px; color: var(--ink-dim); }
+.ref-calc-row.total.ref-calc-first { border-top: 0; margin-top: 0; padding-top: 5px; }
 .ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
 </style>
 </head>
@@ -8489,7 +8500,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '370';
+  const LEDGER_BUILD = '371';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16018,7 +16029,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       .filter(f => f.referencia && f.gastado - f.referencia > 0.005)
       .filter(f => !(Number(aceptados[f.cat]) >= f.gastado - 0.005))
       .map(f => ({ cat: f.cat, exceso: redondearDinero(f.gastado - f.referencia) }));
-    return { inicio, meta, metaBase, reduccionMeta, fijos, adelantos, disponible, filas, suma, sugerencia, sugerido, ahorro, excesos };
+    // BUILD371 · resumen anclado al Gastable de Inicio (misma fuente).
+    const resumen = resumenGastableReferencias(suma, filas.reduce((t, f) => t + f.gastado, 0), meta);
+    return { inicio, meta, metaBase, reduccionMeta, fijos, adelantos, disponible, filas, suma, sugerencia, sugerido, ahorro, excesos,
+      ...resumen };
   }
 
   function ahorroProyectadoReferencias(meta, disponible, pares) {
@@ -16051,6 +16065,34 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   // El Gastable sale del mismo modelo que el arco de Inicio (Disponible − Meta).
   function gastableInicioReferencias() {
     return redondearDinero(budgetArcModel(state).remaining);
+  }
+
+  // BUILD371 · Para tu plan = referencias − gastado en variables; Sin asignar = Gastable − Para tu plan.
+  function resumenGastableReferencias(suma, gastadoVariables, meta) {
+    const gastable = gastableInicioReferencias();
+    const gastadoVar = redondearDinero(gastadoVariables);
+    const paraPlan = redondearDinero(suma - gastadoVar);
+    const sinAsignar = redondearDinero(gastable - paraPlan);
+    const exceso = sinAsignar < -0.005 ? redondearDinero(-sinAsignar) : 0;
+    const ahorraria = redondearDinero(exceso > 0 ? meta - exceso : meta + Math.max(0, sinAsignar));
+    return { gastable, gastadoVar, paraPlan, sinAsignar, exceso, ahorraria };
+  }
+
+  function bloquesResumenReferenciasHtml(r, meta, oculto) {
+    const monto = v => oculto ? '****' : fmtInt(v);
+    const segundo = r.exceso > 0
+      ? { label: 'Excedes', valor: r.exceso }
+      : { label: 'Sin asignar', valor: Math.max(0, r.sinAsignar) };
+    const detalle = r.exceso > 0
+      ? `meta S/${oculto ? '****' : fmt(meta)} − S/${oculto ? '****' : fmt(r.exceso)}`
+      : `meta S/${oculto ? '****' : fmt(meta)} + S/${oculto ? '****' : fmt(Math.max(0, r.sinAsignar))}`;
+    return `<div class="bento ref-bento">
+        <div class="bento-card ref-metric"><div class="bento-head"><div class="bento-label">Para tu plan</div></div>
+          <div class="bento-body"><div class="bento-value"><span class="cur">S/</span><span>${monto(r.paraPlan)}</span></div></div></div>
+        <div class="bento-card ref-metric"><div class="bento-head"><div class="bento-label">${segundo.label}</div></div>
+          <div class="bento-body"><div class="bento-value"><span class="cur">S/</span><span>${monto(segundo.valor)}</span></div></div></div>
+      </div>
+      <div class="ref-pill"><span class="ref-pill-dot"></span><span>Ahorrarías <strong class="ref-num">S/${oculto ? '****' : fmt(r.ahorraria)}</strong></span><span class="ref-pill-sub">${detalle}</span></div>`;
   }
 
   function lineaQuedanReferenciasHtml(suma, gastadoVariables, oculto = false) {
@@ -16089,19 +16131,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     let html = `<div class="ref-view">
       <div class="ref-summary${referenciasDesgloseAbierto ? ' open' : ''}" onclick="toggleReferenciasDesglose(event)">
-        <div class="ref-eyebrow"><span>Disponible</span><span class="ref-eyebrow-actions"><button type="button" class="ref-eye" onclick="toggleReferenciasPrivacidad(event)" aria-label="${oculto ? 'Mostrar montos' : 'Ocultar montos'}"><svg class="ui-icon"><use href="#icon-${oculto ? 'eye-off' : 'eye'}"></use></svg></button>${chev}</span></div>
-        <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.disponible)}</div>
-        <div class="ref-subline" id="refSubline">${lineaReferenciasHtml(m.suma, m.disponible, oculto)}</div>
-        <div class="ref-subline ref-ahorro" id="refAhorro">${lineaAhorroReferenciasHtml(m.ahorro, oculto, m.meta)}</div>
-        <div class="ref-subline ref-quedan" id="refQuedan">${lineaQuedanReferenciasHtml(m.suma, m.filas.reduce((t, f) => t + f.gastado, 0), oculto)}</div>
+        <div class="ref-eyebrow"><span>Gastable</span><span class="ref-eyebrow-actions"><button type="button" class="ref-eye" onclick="toggleReferenciasPrivacidad(event)" aria-label="${oculto ? 'Mostrar montos' : 'Ocultar montos'}"><svg class="ui-icon"><use href="#icon-${oculto ? 'eye-off' : 'eye'}"></use></svg></button>${chev}</span></div>
+        <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.gastable)}</div>
+        <div id="refBloques">${bloquesResumenReferenciasHtml(m, m.meta, oculto)}</div>
         ${m.sugerencia.faltante > 0.005 ? `<div class="ref-aviso">Tu meta implica ${montoPrivadoReferencias(m.sugerencia.faltante, oculto)} menos que un ciclo típico</div>` : ''}
         ${referenciasDesgloseAbierto ? `<div class="ref-calc" onclick="event.stopPropagation()">
-          <div class="ref-calc-row"><span>Inicio del ciclo</span>${montoPrivadoReferencias(m.inicio, oculto)}</div>
-          <div class="ref-calc-row"><span>− Meta de ahorro${m.reduccionMeta > 0.005 ? `<span class="ref-calc-note">Reducida desde ${oculto ? 'S/ ****' : 'S/' + fmt(m.metaBase)}</span>` : ''}</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
-          <div class="ref-calc-row link${referenciasFijosAbierto ? ' open' : ''}" onclick="toggleReferenciasFijos()"><span>− Fijos</span>${montoPrivadoReferencias(m.fijos.total, oculto)}</div>
+          <div class="ref-calc-row total ref-calc-first"><span>Disponible</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
+          <div class="ref-calc-row sub"><span>Inicio del ciclo</span>${montoPrivadoReferencias(m.inicio, oculto)}</div>
+          <div class="ref-calc-row sub"><span>− Meta de ahorro${m.reduccionMeta > 0.005 ? `<span class="ref-calc-note">Reducida desde ${oculto ? 'S/ ****' : 'S/' + fmt(m.metaBase)}</span>` : ''}</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
+          <div class="ref-calc-row sub link${referenciasFijosAbierto ? ' open' : ''}" onclick="toggleReferenciasFijos()"><span>− Fijos</span>${montoPrivadoReferencias(m.fijos.total, oculto)}</div>
           ${referenciasFijosAbierto ? `<div class="ref-fijos">${fijosHtml}</div>` : ''}
-          ${m.adelantos > 0.005 ? `<div class="ref-calc-row"><span>− Adelantos</span>${montoPrivadoReferencias(m.adelantos, oculto)}</div>` : ''}
-          <div class="ref-calc-row total"><span>Disponible</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
+          ${m.adelantos > 0.005 ? `<div class="ref-calc-row sub"><span>− Adelantos</span>${montoPrivadoReferencias(m.adelantos, oculto)}</div>` : ''}
+          <div class="ref-calc-row total"><span>Asignado</span>${montoPrivadoReferencias(m.suma, oculto)}</div>
+          <div class="ref-calc-row total"><span>Ya gastado en variables</span>${montoPrivadoReferencias(m.gastadoVar, oculto)}</div>
+          <div class="ref-calc-row total"><span>Ahorro separado</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
         </div>` : ''}
       </div>
       <div class="ref-head"><span class="ref-title">${referenciasEditando ? 'Editar referencias' : 'Por categoría'}</span>
@@ -16112,7 +16155,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       const det = tipicoDetalleReferencias();
       const tipico = det.tipico;
       const bloqueadas = referenciasBloqueadas();
-      const sinAsignar = redondearDinero(m.disponible - m.suma);
+      const sinAsignar = m.sinAsignar; // BUILD371 · Gastable − Para tu plan
       html += m.filas.map(f => {
         const ref = f.referencia || 0;
         const tope = redondearDinero(ref + Math.max(0, sinAsignar));
@@ -16292,12 +16335,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const oculto = referenciasOcultas;
     const pares = m.filas.map(f => [f.cat === cat ? valor : f.referencia, f.gastado]);
     const suma = redondearDinero(m.suma - (Number(slider.dataset.refIni) || 0) + valor);
-    const sub = document.getElementById('refSubline');
-    if (sub) sub.innerHTML = lineaReferenciasHtml(suma, m.disponible, oculto);
-    const ah = document.getElementById('refAhorro');
-    if (ah) ah.innerHTML = lineaAhorroReferenciasHtml(ahorroProyectadoReferencias(m.meta, m.disponible, pares), oculto, m.meta);
-    const qu = document.getElementById('refQuedan');
-    if (qu) qu.innerHTML = lineaQuedanReferenciasHtml(suma, m.filas.reduce((t, f) => t + f.gastado, 0), oculto);
+    const bloques = document.getElementById('refBloques');
+    if (bloques) bloques.innerHTML = bloquesResumenReferenciasHtml(resumenGastableReferencias(suma, m.gastadoVar, m.meta), m.meta, oculto);
   }
 
   function soltarSliderReferencia(slider) {
@@ -16320,7 +16359,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const fila = m.filas.find(f => f.cat === cat);
     if (!fila) return;
     const ref = fila.referencia || 0;
-    const sinAsignar = redondearDinero(m.disponible - m.suma);
+    const sinAsignar = m.sinAsignar; // BUILD371
     const tope = redondearDinero(ref + Math.max(0, sinAsignar));
     const pedido = redondearDinero(Math.max(fila.gastado, Number(pedidoCrudo) || 0));
     // Pasarse menos de un salto (S/ 10) solo completa lo sin asignar, sin preguntar.
@@ -16556,7 +16595,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (!fila || !fila.referencia) return null;
     const exceso = redondearDinero(fila.gastado - fila.referencia);
     if (exceso <= 0.005) return null;
-    const holgura = Math.max(0, redondearDinero(m.disponible - m.suma));
+    const holgura = Math.max(0, m.sinAsignar); // BUILD371
     const bloqueadas = referenciasBloqueadas();
     const otras = m.filas
       .filter(f => f.cat !== cat && f.referencia)

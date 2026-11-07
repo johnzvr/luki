@@ -4758,6 +4758,38 @@
   .edit-sem-row input[type="checkbox"]:checked::after { transform: rotate(45deg) scale(1); }
   .edit-sem-row input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
   .edit-sem-row:has(input:checked) { border-color: #22A65A; }
+  /* BUILD381 · elegir bloques dentro de Editar movimiento */
+  .edit-blocks-row {
+    border: 1.5px solid var(--line-hi);
+    border-radius: 12px;
+    padding: 11px 13px 12px;
+    display: grid;
+    gap: 10px;
+    color: var(--ink);
+    transition: opacity .15s;
+  }
+  .edit-blocks-row.is-off { opacity: .42; pointer-events: none; }
+  .edit-blocks-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; font-weight: 550; }
+  .edit-blocks-head b { font-weight: 550; color: var(--ink-mute); white-space: nowrap; }
+  .edit-blocks-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .edit-block-pill { position: relative; cursor: pointer; }
+  .edit-block-pill input { position: absolute; opacity: 0; pointer-events: none; }
+  .edit-block-pill span {
+    min-width: 40px;
+    height: 34px;
+    padding: 0 10px;
+    border: 1.5px solid var(--line-hi);
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    transition: background-color .15s, border-color .15s, color .15s;
+  }
+  .edit-block-pill input:checked + span { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .edit-block-pill input:disabled + span { opacity: .3; cursor: not-allowed; }
 
   .installment-confirm-summary {
     margin: 14px 0;
@@ -8527,7 +8559,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '380';
+  const LEDGER_BUILD = '381';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -14436,7 +14468,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       <h2>Editar <span class="accent">movimiento</span></h2>
       <p class="modal-sub">${esCuotaPropia
         ? `DS+P · el monto se vuelve a dividir 50/50 y permanece como variante de DS.`
-        : `Se conservará la fecha ${escapeHtml(mov.fecha || '')}. Solo cambios de monto, tipo o SEM recalculan movimientos posteriores.`}</p>
+        : `Se conservará la fecha ${escapeHtml(mov.fecha || '')}. Solo cambios de monto, tipo o bloques recalculan movimientos posteriores.`}</p>
       ${(() => {
         // BUILD304 · selector S/ · US$ igual que al registrar.
         const infoUsd = infoMonedaOriginalMovimiento(mov);
@@ -14492,8 +14524,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </div>
       <label class="edit-sem-row" id="editMovementSemRow">
         <span>Repartir entre los bloques restantes</span>
-        <input type="checkbox" id="editMovementSem" ${mov.etiqueta === 'sem' ? 'checked' : ''} ${esMovimientoDSCubierto(mov) ? 'disabled' : ''}>
+        <input type="checkbox" id="editMovementSem" ${mov.etiqueta === 'sem' ? 'checked' : ''} ${esMovimientoDSCubierto(mov) ? 'disabled' : ''} onchange="cambioSemEdicion()">
       </label>
+      ${esMovimientoDSCubierto(mov) ? '' : htmlBloquesEdicion(mov)}
       ${esMovimientoDSCubierto(mov) ? `<label class="edit-sem-row" id="editMovementAdvanceRow">
         <span>A · Lo pago con el próximo sueldo</span>
         <input type="checkbox" id="editMovementAdvance" ${esMovimientoAdelanto(mov) ? 'checked' : ''}>
@@ -14512,6 +14545,86 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     });
     toggleEditFundType(mov.tipo);
     updateEditMovementUsdPreview();
+  }
+
+  // BUILD381 · Editar movimiento: elegir de qué bloque(s) sale el gasto.
+  // Se ofrecen desde el bloque de la fecha del movimiento hasta el último. Los bloques ya
+  // terminados que no son el del movimiento quedan bloqueados (su saldo ya pasó al siguiente).
+  // Todos marcados = "sem"; solo el del movimiento = sin elección; uno o varios = bloqueElegido.
+  function fechaMovimientoEdicion(mov) {
+    if (mov?.fechaISO) return new Date(mov.fechaISO);
+    if (Number.isFinite(Number(mov?.timestamp))) return new Date(Number(mov.timestamp));
+    return new Date();
+  }
+
+  function htmlBloquesEdicion(mov) {
+    const base = calcularSemanaIdxParaFecha(fechaMovimientoEdicion(mov));
+    const hoy = calcularSemanaIdxParaFecha(new Date());
+    const total = state.semanas.length;
+    if (base < 0 || total - base < 2) return '';
+    const elegidos = mov.etiqueta === 'sem'
+      ? null
+      : (Array.isArray(mov.bloqueElegido) ? mov.bloqueElegido.map(Number) : (Number.isInteger(mov.bloqueElegido) ? [mov.bloqueElegido] : [base]));
+    const pills = [];
+    for (let i = base; i < total; i++) {
+      const bloqueado = i > base && hoy >= 0 && i < hoy;
+      const marcado = elegidos ? elegidos.includes(i) : true;
+      pills.push(`<label class="edit-block-pill"><input type="checkbox" name="editMovementBlock" value="${i}" ${marcado ? 'checked' : ''} ${bloqueado ? 'disabled' : ''} onchange="cambioBloqueEdicion(this)"><span>${i + 1}</span></label>`);
+    }
+    return `<div class="edit-blocks-row" id="editMovementBlocksRow" data-base="${base}" data-hoy="${hoy}">
+        <div class="edit-blocks-head"><span>¿De qué bloques sale?</span><b id="editMovementBlocksResumen"></b></div>
+        <div class="edit-blocks-pills">${pills.join('')}</div>
+      </div>`;
+  }
+
+  function bloquesEdicionInputs() {
+    return [...document.querySelectorAll('input[name="editMovementBlock"]')];
+  }
+
+  function resumenBloquesEdicion() {
+    const el = document.getElementById('editMovementBlocksResumen');
+    const row = document.getElementById('editMovementBlocksRow');
+    if (!el || !row) return;
+    const inputs = bloquesEdicionInputs();
+    const marcados = inputs.filter(i => i.checked).map(i => Number(i.value));
+    const hoy = Number(row.dataset.hoy);
+    if (marcados.length === inputs.length) el.textContent = 'Todos';
+    else if (marcados.length === 1) el.textContent = `Bloque ${marcados[0] + 1}${marcados[0] === hoy ? ' · actual' : ''}`;
+    else el.textContent = etiquetaBloquesElegidos(marcados);
+  }
+
+  function cambioBloqueEdicion(input) {
+    const inputs = bloquesEdicionInputs();
+    if (!inputs.some(i => i.checked)) { input.checked = true; toast('Elige al menos un bloque', true); }
+    const todos = inputs.every(i => i.checked);
+    // Fuera de "Todos", los bloques ya terminados no quedan marcados.
+    if (!todos) inputs.forEach(i => { if (i.disabled) i.checked = false; });
+    if (!inputs.some(i => i.checked)) {
+      const base = inputs.find(i => Number(i.value) === Number(document.getElementById('editMovementBlocksRow')?.dataset.base));
+      if (base) base.checked = true;
+    }
+    const sem = document.getElementById('editMovementSem');
+    if (sem && !sem.disabled) sem.checked = inputs.every(i => i.checked);
+    resumenBloquesEdicion();
+  }
+
+  function cambioSemEdicion() {
+    const sem = document.getElementById('editMovementSem');
+    const row = document.getElementById('editMovementBlocksRow');
+    if (!sem || !row) return;
+    const base = Number(row.dataset.base);
+    bloquesEdicionInputs().forEach(i => { i.checked = sem.checked ? true : Number(i.value) === base; });
+    resumenBloquesEdicion();
+  }
+
+  // Devuelve { etiqueta, bloqueElegido } según la fila de bloques (o null si no hay fila).
+  function bloquesElegidosEdicion(mov) {
+    const row = document.getElementById('editMovementBlocksRow');
+    if (!row || row.classList.contains('is-off')) return null;
+    const inputs = bloquesEdicionInputs();
+    const marcados = inputs.filter(i => i.checked).map(i => Number(i.value)).sort((a, b) => a - b);
+    if (marcados.length === inputs.length) return { etiqueta: 'sem', bloqueElegido: null };
+    return { etiqueta: null, bloqueElegido: bloqueElegidoValido(marcados, fechaMovimientoEdicion(mov), null) };
   }
 
   let editMovementCurrency = 'PEN';
@@ -14616,6 +14729,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       row.style.opacity = esFondo ? '0.42' : '1';
     }
     if (cardRow) cardRow.style.display = esTarjeta ? '' : 'none';
+    // BUILD381 · la fila de bloques sigue a "Repartir": F y F+DS no tocan bloques.
+    const blocksRow = document.getElementById('editMovementBlocksRow');
+    if (blocksRow) blocksRow.classList.toggle('is-off', esFondo);
+    resumenBloquesEdicion();
   }
 
   function saveMovementEdit(idx) {
@@ -14642,7 +14759,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       : '';
     const editCubierto = tipo === 'DS' && esMovimientoDSCubierto(state.log[idx]);
     const editAdelanto = editCubierto && !!document.getElementById('editMovementAdvance')?.checked; // BUILD330
-    const etiqueta = !editCubierto && afectaPresupuestoSalarial(tipo) && document.getElementById('editMovementSem')?.checked ? 'sem' : null;
+    let etiqueta = !editCubierto && afectaPresupuestoSalarial(tipo) && document.getElementById('editMovementSem')?.checked ? 'sem' : null;
+    // BUILD381 · bloques elegidos en el editor (sin fila: se conserva lo que tenía, salvo con "sem").
+    const movParaBloques = state.log[idx];
+    const eleccionBloques = !editCubierto && afectaPresupuestoSalarial(tipo) ? bloquesElegidosEdicion(movParaBloques) : null;
+    if (eleccionBloques) etiqueta = eleccionBloques.etiqueta;
+    const bloqueAnterior = movParaBloques?.etiqueta === 'sem' ? null : (movParaBloques?.bloqueElegido ?? null);
+    const bloqueNuevo = !afectaPresupuestoSalarial(tipo) || editCubierto || etiqueta === 'sem'
+      ? null
+      : (eleccionBloques ? eleccionBloques.bloqueElegido : bloqueAnterior);
     if (!Number.isFinite(monto) || monto <= 0 || !['S', 'DS', 'F', 'FDS'].includes(tipo)) {
       toast('Revisa el monto y el tipo', true);
       return;
@@ -14667,10 +14792,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const montoCambio = Math.abs((Number(currentMov?.monto) || 0) - monto) > 0.0001;
     const tipoCambio = normalizarTipoMovimiento(currentMov?.tipo) !== normalizarTipoMovimiento(tipo);
     const semCambio = (currentMov?.etiqueta === 'sem' ? 'sem' : null) !== etiqueta;
+    const bloqueCambio = JSON.stringify(bloqueAnterior) !== JSON.stringify(bloqueNuevo); // BUILD381
 
     // Detalle y categoría son metadata. Si monto/tipo/SEM no cambiaron,
     // guardar directamente sin entrar al motor de recálculo.
-    if (!montoCambio && !tipoCambio && !semCambio) {
+    if (!montoCambio && !tipoCambio && !semCambio && !bloqueCambio) {
       currentMov.detalle = detalle;
       if (metaUsdEdicion) Object.assign(currentMov, metaUsdEdicion);
       if (categoria) currentMov.categoria = categoria;
@@ -14726,6 +14852,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         snapshot: cloneMovementSnapshot(targetBefore)
       };
       if (metaUsdEdicion) Object.assign(editedMov, metaUsdEdicion);
+      if (bloqueNuevo !== null && bloqueNuevo !== undefined) editedMov.bloqueElegido = bloqueNuevo; // BUILD381
+      else delete editedMov.bloqueElegido;
       // BUILD303 · los gastos en US$ guardan su impacto en el presupuesto; si era el monto
       // completo, debe seguir al nuevo monto (antes quedaba el valor anterior y el Disponible no cambiaba).
       if (!planCuotaPropia && Number.isFinite(Number(originalMov.impactoPresupuesto))

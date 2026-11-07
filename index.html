@@ -8032,6 +8032,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 .ref-calc-row.sub { padding: 3px 0 3px 12px; font-size: 13px; }
 .ref-calc-row.sub .ref-num { font-size: 13px; color: var(--ink-dim); }
 .ref-calc-row.total.ref-calc-first { border-top: 0; margin-top: 0; padding-top: 5px; }
+.ref-plan-line { font-size: 15px; color: var(--ink-dim); margin: 2px 0 12px; }
+.ref-plan-line .ref-num { color: var(--ink); font-size: 15px; font-weight: 700; }
 .ref-empty { font-size: 14px; color: var(--ink-dim); padding: 30px 0; text-align: center; }
 </style>
 </head>
@@ -8500,7 +8502,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '372';
+  const LEDGER_BUILD = '373';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16068,8 +16070,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       .filter(f => f.referencia && f.gastado - f.referencia > 0.005)
       .filter(f => !(Number(aceptados[f.cat]) >= f.gastado - 0.005))
       .map(f => ({ cat: f.cat, exceso: redondearDinero(f.gastado - f.referencia) }));
-    // BUILD371 · resumen anclado al Gastable de Inicio (misma fuente).
-    const resumen = resumenGastableReferencias(suma, filas.reduce((t, f) => t + f.gastado, 0), meta);
+    // BUILD373 · vista del mes completo: Sin asignar = Disponible − Tu plan (suma de referencias).
+    const resumen = resumenPlanReferencias(suma, disponible, meta);
+    resumen.gastadoVar = redondearDinero(filas.reduce((t, f) => t + f.gastado, 0));
     return { inicio, meta, metaBase, reduccionMeta, fijos, adelantos, disponible, filas, suma, sugerencia, sugerido, ahorro, excesos,
       ...resumen };
   }
@@ -16115,6 +16118,25 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const exceso = sinAsignar < -0.005 ? redondearDinero(-sinAsignar) : 0;
     const ahorraria = redondearDinero(exceso > 0 ? meta - exceso : meta + Math.max(0, sinAsignar));
     return { gastable, gastadoVar, paraPlan, sinAsignar, exceso, ahorraria };
+  }
+
+  function resumenPlanReferencias(suma, disponible, meta) {
+    const sinAsignar = redondearDinero(disponible - suma);
+    const exceso = sinAsignar < -0.005 ? redondearDinero(-sinAsignar) : 0;
+    const ahorraria = redondearDinero(exceso > 0 ? meta - exceso : meta + Math.max(0, sinAsignar));
+    return { paraPlan: redondearDinero(suma), sinAsignar, exceso, ahorraria };
+  }
+
+  function planResumenReferenciasHtml(r, meta, oculto) {
+    const m = v => oculto ? 'S/****' : 'S/' + fmt(v);
+    const linea = r.exceso > 0
+      ? `Excedes <span class="ref-num">${m(r.exceso)}</span>`
+      : `Sin asignar <span class="ref-num">${m(Math.max(0, r.sinAsignar))}</span>`;
+    const detalle = r.exceso > 0
+      ? `meta ${m(meta)} − ${m(r.exceso)}`
+      : `meta ${m(meta)} + ${m(Math.max(0, r.sinAsignar))}`;
+    return `<div class="ref-plan-line">${linea}</div>
+      <div class="ref-pill"><span class="ref-pill-dot"></span><span>Ahorrarías <strong class="ref-num">${m(r.ahorraria)}</strong></span><span class="ref-pill-sub">${detalle}</span></div>`;
   }
 
   function bloquesResumenReferenciasHtml(r, meta, oculto) {
@@ -16170,20 +16192,19 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     let html = `<div class="ref-view">
       <div class="ref-summary${referenciasDesgloseAbierto ? ' open' : ''}" onclick="toggleReferenciasDesglose(event)">
-        <div class="ref-eyebrow"><span>Gastable</span><span class="ref-eyebrow-actions"><button type="button" class="ref-eye" onclick="toggleReferenciasPrivacidad(event)" aria-label="${oculto ? 'Mostrar montos' : 'Ocultar montos'}"><svg class="ui-icon"><use href="#icon-${oculto ? 'eye-off' : 'eye'}"></use></svg></button>${chev}</span></div>
-        <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.gastable)}</div>
-        <div id="refBloques">${bloquesResumenReferenciasHtml(m, m.meta, oculto)}</div>
+        <div class="ref-eyebrow"><span>Tu plan</span><span class="ref-eyebrow-actions"><button type="button" class="ref-eye" onclick="toggleReferenciasPrivacidad(event)" aria-label="${oculto ? 'Mostrar montos' : 'Ocultar montos'}"><svg class="ui-icon"><use href="#icon-${oculto ? 'eye-off' : 'eye'}"></use></svg></button>${chev}</span></div>
+        <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.suma)}</div>
+        <div id="refBloques">${planResumenReferenciasHtml(m, m.meta, oculto)}</div>
         ${m.sugerencia.faltante > 0.005 ? `<div class="ref-aviso">Tu meta implica ${montoPrivadoReferencias(m.sugerencia.faltante, oculto)} menos que un ciclo típico</div>` : ''}
         ${referenciasDesgloseAbierto ? `<div class="ref-calc" onclick="event.stopPropagation()">
-          <div class="ref-calc-row total ref-calc-first"><span>Disponible</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
-          <div class="ref-calc-row sub"><span>Inicio del ciclo</span>${montoPrivadoReferencias(m.inicio, oculto)}</div>
-          <div class="ref-calc-row sub"><span>− Meta de ahorro${m.reduccionMeta > 0.005 ? `<span class="ref-calc-note">Reducida desde ${oculto ? 'S/ ****' : 'S/' + fmt(m.metaBase)}</span>` : ''}</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
-          <div class="ref-calc-row sub link${referenciasFijosAbierto ? ' open' : ''}" onclick="toggleReferenciasFijos()"><span>− Fijos</span>${montoPrivadoReferencias(m.fijos.total, oculto)}</div>
+          <div class="ref-calc-row"><span>Inicio del ciclo</span>${montoPrivadoReferencias(m.inicio, oculto)}</div>
+          <div class="ref-calc-row link${referenciasFijosAbierto ? ' open' : ''}" onclick="toggleReferenciasFijos()"><span>− Fijos</span>${montoPrivadoReferencias(m.fijos.total, oculto)}</div>
           ${referenciasFijosAbierto ? `<div class="ref-fijos">${fijosHtml}</div>` : ''}
-          ${m.adelantos > 0.005 ? `<div class="ref-calc-row sub"><span>− Adelantos</span>${montoPrivadoReferencias(m.adelantos, oculto)}</div>` : ''}
-          <div class="ref-calc-row total"><span>Asignado</span>${montoPrivadoReferencias(m.suma, oculto)}</div>
-          <div class="ref-calc-row total"><span>Ya gastado en variables</span>${montoPrivadoReferencias(m.gastadoVar, oculto)}</div>
-          <div class="ref-calc-row total"><span>Ahorro separado</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
+          ${m.adelantos > 0.005 ? `<div class="ref-calc-row"><span>− Adelantos</span>${montoPrivadoReferencias(m.adelantos, oculto)}</div>` : ''}
+          <div class="ref-calc-row"><span>− Meta de ahorro${m.reduccionMeta > 0.005 ? `<span class="ref-calc-note">Reducida desde ${oculto ? 'S/ ****' : 'S/' + fmt(m.metaBase)}</span>` : ''}</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
+          <div class="ref-calc-row total"><span>= Disponible</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
+          <div class="ref-calc-row"><span>− Tu plan</span>${montoPrivadoReferencias(m.suma, oculto)}</div>
+          <div class="ref-calc-row total"><span>${m.exceso > 0 ? '= Excedes' : '= Sin asignar'}</span>${montoPrivadoReferencias(m.exceso > 0 ? m.exceso : m.sinAsignar, oculto)}</div>
         </div>` : ''}
       </div>
       <div class="ref-head"><span class="ref-title">${referenciasEditando ? 'Editar referencias' : 'Por categoría'}</span>
@@ -16194,7 +16215,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       const det = tipicoDetalleReferencias();
       const tipico = det.tipico;
       const bloqueadas = referenciasBloqueadas();
-      const sinAsignar = m.sinAsignar; // BUILD371 · Gastable − Para tu plan
+      const sinAsignar = m.sinAsignar; // BUILD373 · Disponible − Tu plan
       html += m.filas.map(f => {
         const ref = f.referencia || 0;
         const tope = redondearDinero(ref + Math.max(0, sinAsignar));
@@ -16375,7 +16396,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const pares = m.filas.map(f => [f.cat === cat ? valor : f.referencia, f.gastado]);
     const suma = redondearDinero(m.suma - (Number(slider.dataset.refIni) || 0) + valor);
     const bloques = document.getElementById('refBloques');
-    if (bloques) bloques.innerHTML = bloquesResumenReferenciasHtml(resumenGastableReferencias(suma, m.gastadoVar, m.meta), m.meta, oculto);
+    if (bloques) bloques.innerHTML = planResumenReferenciasHtml(resumenPlanReferencias(suma, m.disponible, m.meta), m.meta, oculto);
+    const hero = document.getElementById('refHero');
+    if (hero) hero.textContent = oculto ? 'S/ ****' : 'S/' + fmt(suma);
   }
 
   function soltarSliderReferencia(slider) {

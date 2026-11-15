@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '388';
+  const LEDGER_BUILD = '389';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16687,7 +16687,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         }
         const exceso = redondearDinero(f.gastado - f.referencia);
         const pct = Math.max(0, Math.min(100, f.gastado / f.referencia * 100));
-        return `<div class="ref-row" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt">Quedan <b>${montoFilaReferencias(Math.max(0, f.referencia - f.gastado), oculto)}</b></span></div>
+      // BUILD389 · el ojo de Referencias solo oculta el número grande y su desglose.
+        return `<div class="ref-row" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt">Quedan <b>${montoFilaReferencias(Math.max(0, f.referencia - f.gastado), false)}</b></span></div>
           <div class="ref-bar-row"><div class="ref-bar"><i style="width:${pct}%"></i></div>${exceso > 0.005 ? `<span class="ref-over">+S/${fmt(exceso)}</span>` : ''}</div></div>`;
       }).join('');
       // BUILD386 · cierre: lo que quedan las categorías + esta fila = Disponible (número grande).
@@ -16695,7 +16696,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       const sumaQuedan = m.filas.reduce((t, f) => t + (f.referencia ? Math.max(0, f.referencia - f.gastado) : 0), 0);
       const cierre = redondearDinero(m.quedaVariables - sumaQuedan);
       if (Math.abs(cierre) > 0.005) {
-        html += `<div class="ref-row off ref-row-cierre"><div class="ref-row-top"><span class="ref-name">${cierre > 0 ? 'Sin asignar' : 'Excedes'}</span><span class="ref-amt">${cierre > 0 ? '' : '−'}${montoFilaReferencias(Math.abs(cierre), oculto)}</span></div></div>`;
+        html += `<div class="ref-row off ref-row-cierre"><div class="ref-row-top"><span class="ref-name">${cierre > 0 ? 'Sin asignar' : 'Excedes'}</span><span class="ref-amt">${cierre > 0 ? '' : '−'}${montoFilaReferencias(Math.abs(cierre), false)}</span></div></div>`;
       }
     }
     html += '</div>';

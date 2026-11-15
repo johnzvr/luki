@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '384';
+  const LEDGER_BUILD = '385';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16581,9 +16581,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     let html = `<div class="ref-view">
       <div class="ref-summary${referenciasDesgloseAbierto ? ' open' : ''}" onclick="toggleReferenciasDesglose(event)">
-        <div class="ref-eyebrow"><span>Tu plan</span><span class="ref-eyebrow-actions"><button type="button" class="ref-eye" onclick="toggleReferenciasPrivacidad(event)" aria-label="${oculto ? 'Mostrar montos' : 'Ocultar montos'}"><svg class="ui-icon"><use href="#icon-${oculto ? 'eye-off' : 'eye'}"></use></svg></button>${chev}</span></div>
-        <div class="ref-hero" id="refHero">${heroPlanReferenciasHtml(m.suma, m.disponible, oculto)}</div>
-        <div id="refBloques">${barraPlanReferenciasHtml(m, m.disponible, m.meta, oculto)}</div>
+        <div class="ref-eyebrow"><span>Disponible</span><span class="ref-eyebrow-actions"><button type="button" class="ref-eye" onclick="toggleReferenciasPrivacidad(event)" aria-label="${oculto ? 'Mostrar montos' : 'Ocultar montos'}"><svg class="ui-icon"><use href="#icon-${oculto ? 'eye-off' : 'eye'}"></use></svg></button>${chev}</span></div>
+        <div class="ref-hero" id="refHero">${oculto ? 'S/ ****' : 'S/' + fmt(m.quedaVariables)}</div>
         ${m.sugerencia.faltante > 0.005 ? `<div class="ref-aviso">Tu meta implica ${montoPrivadoReferencias(m.sugerencia.faltante, oculto)} menos que un ciclo típico</div>` : ''}
         ${referenciasDesgloseAbierto ? `<div class="ref-calc" onclick="event.stopPropagation()">
           <div class="ref-calc-row"><span>Inicio del ciclo</span>${montoPrivadoReferencias(m.inicio, oculto)}</div>
@@ -16593,7 +16592,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           ${Math.abs(m.fueraCategorias) > 0.005 ? `<div class="ref-calc-row"><span>${m.fueraCategorias > 0 ? '−' : '+'} Fuera de categorías<span class="ref-calc-note">Sin categoría y ajustes de saldo</span></span>${montoPrivadoReferencias(Math.abs(m.fueraCategorias), oculto)}</div>` : ''}
           <div class="ref-calc-row"><span>− Meta de ahorro${m.reduccionMeta > 0.005 ? `<span class="ref-calc-note">Reducida desde ${oculto ? 'S/ ****' : 'S/' + fmt(m.metaBase)}</span>` : ''}</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
           <div class="ref-calc-row total"><span>= Presupuesto</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
-          <div class="ref-calc-row"><span>− Tu plan</span>${montoPrivadoReferencias(m.suma, oculto)}</div>
+          <div class="ref-calc-row"><span>− Gastado en categorías</span>${montoPrivadoReferencias(m.gastadoVar, oculto)}</div>
+          <div class="ref-calc-row total"><span>= Disponible</span>${montoPrivadoReferencias(m.quedaVariables, oculto)}</div>
+          <div class="ref-calc-row"><span>− Por gastar según tus referencias</span>${montoPrivadoReferencias(redondearDinero(m.suma - m.gastadoVar), oculto)}</div>
           <div class="ref-calc-row total"><span>${m.exceso > 0 ? '= Excedes' : '= Sin asignar'}</span>${montoPrivadoReferencias(m.exceso > 0 ? m.exceso : m.sinAsignar, oculto)}</div>
         </div>` : ''}
       </div>
@@ -16789,8 +16790,6 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const suma = redondearDinero(m.suma - (Number(slider.dataset.refIni) || 0) + valor);
     const bloques = document.getElementById('refBloques');
     if (bloques) bloques.innerHTML = barraPlanReferenciasHtml(resumenPlanReferencias(suma, m.disponible, m.meta), m.disponible, m.meta, oculto);
-    const hero = document.getElementById('refHero');
-    if (hero) hero.innerHTML = heroPlanReferenciasHtml(suma, m.disponible, oculto);
     const fila = document.getElementById('refSinAsignarEdit');
     if (fila) fila.innerHTML = sinAsignarEdicionHtml(m.disponible - suma); // BUILD374 · en vivo
     actualizarFlotanteSinAsignar();

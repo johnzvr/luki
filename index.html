@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '386';
+  const LEDGER_BUILD = '387';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16094,6 +16094,25 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return state.referenciasCiclo.refs;
   }
 
+  // BUILD387 · Cada ciclo empieza en blanco: las referencias solo aparecen después de tocar
+  // Actualizar en ese ciclo. Los ciclos abiertos hasta BUILD386 siguen como estaban.
+  function referenciasCicloActivas() {
+    const reg = state.referenciasCiclo;
+    if (reg && typeof reg === 'object' && reg.ciclo === state.fechaInicioCiclo && reg.actualizado) return true;
+    const desde = state.referenciasBlancoDesde;
+    return !!(desde && state.fechaInicioCiclo && String(state.fechaInicioCiclo) <= String(desde));
+  }
+
+  function asegurarReferenciasBlancoDesde() {
+    if (state.referenciasBlancoDesde === undefined && state.fechaInicioCiclo) state.referenciasBlancoDesde = String(state.fechaInicioCiclo);
+  }
+
+  function activarReferenciasCiclo() {
+    const ajustes = ajustesCicloReferencias(true);
+    state.referenciasCiclo.actualizado = true;
+    return ajustes;
+  }
+
   function referenciaEfectivaDeCategoria(cat) {
     const ajustes = ajustesCicloReferencias();
     if (Object.prototype.hasOwnProperty.call(ajustes, cat)) {
@@ -16288,7 +16307,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const disponible = vivo.presupuesto;
     const sugerencia = sugerenciaReferencias(disponible);
     const sugerido = referenciasEnModoSugerido();
-    const refDe = cat => sugerido ? (sugerencia.refs[cat] || null) : referenciaEfectivaDeCategoria(cat);
+    const activas = referenciasCicloActivas(); // BUILD387
+    const refDe = cat => !activas ? null : sugerido ? (sugerencia.refs[cat] || null) : referenciaEfectivaDeCategoria(cat);
     const baseDe = cat => sugerido ? (sugerencia.refs[cat] || null) : referenciaDeCategoria(cat);
     const filas = categoriasVariablesReferencias().map((cat, orden) => {
       const referencia = refDe(cat), base = baseDe(cat);
@@ -16316,7 +16336,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     // BUILD373 · vista del mes completo: Sin asignar = Disponible − Tu plan (suma de referencias).
     const resumen = resumenPlanReferencias(suma, disponible, meta);
     resumen.gastadoVar = redondearDinero(filas.reduce((t, f) => t + f.gastado, 0));
-    return { inicio, meta, metaBase, reduccionMeta, fijos, adelantos, fueraCategorias, quedaVariables: vivo.queda, disponible, filas, suma, sugerencia, sugerido, ahorro, excesos,
+    return { activas, inicio, meta, metaBase, reduccionMeta, fijos, adelantos, fueraCategorias, quedaVariables: vivo.queda, disponible, filas, suma, sugerencia, sugerido, ahorro, excesos,
       ...resumen };
   }
 
@@ -16351,10 +16371,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const items = [];
     m.filas.forEach(f => {
       const ref = f.referencia || 0;
-      if (bloqueadas[f.cat]) { if (ref > 0.005) libre -= Math.max(0, ref - f.gastado); return; }
+      const refBase = ref || f.base || 0; // BUILD387 · en blanco, la base guardada
+      if (bloqueadas[f.cat]) { if (refBase > 0.005) libre -= Math.max(0, refBase - f.gastado); return; }
       const t = Number(tipico[f.cat]) || 0;
-      const base = t > 0.005 ? t : ref;
-      if (base <= 0.005 && ref <= 0.005) return;
+      const base = t > 0.005 ? t : refBase;
+      if (base <= 0.005) return;
       items.push({ cat: f.cat, ref, gastado: f.gastado, tipico: t, ideal: Math.max(0, base - f.gastado) });
     });
     libre = redondearDinero(Math.max(0, libre));
@@ -16400,13 +16421,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (referenciasEnModoSugerido()) guardarSugerenciaReferencias(modeloReferencias().sugerencia.refs);
     const plan = planActualizarReferencias();
     closeModal();
-    if (!plan.cambios.length) { toast('Tus referencias ya están al día'); return; }
-    const ajustes = ajustesCicloReferencias(true);
-    plan.cambios.forEach(c => { ajustes[c.cat] = c.despues; });
+    const activas = referenciasCicloActivas();
+    if (activas && !plan.cambios.length) { toast('Tus referencias ya están al día'); return; }
+    if (!plan.items.length) { toast('Aún no hay típicos ni referencias para calcular'); return; }
+    const bloqueadas = referenciasBloqueadas();
+    const filas = modeloReferencias().filas;
+    const ajustes = activarReferenciasCiclo(); // BUILD387
+    // Al activar el ciclo se fija todo: las calculadas y las bloqueadas (con su base).
+    (activas ? plan.cambios : plan.items).forEach(c => { ajustes[c.cat] = c.despues; });
+    if (!activas) filas.forEach(f => { if (bloqueadas[f.cat] && f.base) ajustes[f.cat] = f.base; });
+    filas.forEach(f => { if (!Object.prototype.hasOwnProperty.call(ajustes, f.cat)) ajustes[f.cat] = 0; });
     saveState({ markModified: true, sync: true });
     renderReferencias();
     requestAnimationFrame(updateViewHeight);
-    toast(`Referencias actualizadas · ${plan.cambios.length} ${plan.cambios.length === 1 ? 'categoría' : 'categorías'}`);
+    toast('Referencias actualizadas');
   }
 
   function ahorroProyectadoReferencias(meta, disponible, pares) {
@@ -16576,6 +16604,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       shell.dataset.refScrollFix = '1';
       shell.addEventListener('scroll', () => { if (shell.scrollLeft) shell.scrollLeft = 0; });
     }
+    asegurarReferenciasBlancoDesde(); // BUILD387
     const m = modeloReferencias();
     const oculto = referenciasOcultas; // BUILD366
     const chev = '<svg class="ref-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>';
@@ -16603,9 +16632,12 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>` : ''}
       </div>
       <div class="ref-head"><span class="ref-title">${referenciasEditando ? 'Editar referencias' : 'Por categoría'}</span>
-        <span class="ref-actions">${referenciasEditando ? '<button type="button" class="ref-btn" onclick="sugerirReferencias()">Sugerir</button>' : '<button type="button" class="ref-btn" onclick="abrirActualizarReferencias()">Actualizar</button>'}<button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button></span></div>`;
+        <span class="ref-actions">${referenciasEditando ? '<button type="button" class="ref-btn" onclick="sugerirReferencias()">Sugerir</button>' : '<button type="button" class="ref-btn" onclick="abrirActualizarReferencias()">Actualizar</button>'}${m.activas ? `<button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button>` : ''}</span></div>`;
 
-    if (referenciasEditando) {
+    if (!m.activas) {
+      // BUILD387 · ciclo nuevo en blanco hasta tocar Actualizar.
+      html += `<div class="ref-empty">Toca <b>Actualizar</b> para ver cuánto sería lo ideal gastar en cada categoría con tu Disponible de hoy.</div>`;
+    } else if (referenciasEditando) {
       // BUILD368 · un slider por categoría (saltos de S/ 10).
       const det = tipicoDetalleReferencias();
       const tipico = det.tipico;
@@ -16753,6 +16785,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     if (!Object.keys(refs).length) { toast('Aún no hay ciclos con gasto para sugerir'); return; }
     guardarSugerenciaReferencias(refs);
     state.referenciasCiclo = null; // BUILD367 · la sugerencia reemplaza también los ajustes del ciclo
+    activarReferenciasCiclo(); // BUILD387 · sigue activo en este ciclo
     saveState({ markModified: true, sync: true });
     renderReferencias();
     requestAnimationFrame(updateViewHeight);

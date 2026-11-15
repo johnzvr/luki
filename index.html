@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '385';
+  const LEDGER_BUILD = '386';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16422,6 +16422,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return reg.cats;
   }
 
+  function montoFilaReferencias(valor, oculto) {
+    return oculto ? 'S/****' : 'S/' + fmt(Number(valor) || 0);
+  }
+
   function montoPrivadoReferencias(valor, oculto) {
     const n = Number(valor) || 0;
     return `<span class="ref-num">${oculto ? 'S/ ****' : (n < 0 ? '−' : '') + 'S/' + fmt(Math.abs(n))}</span>`;
@@ -16647,13 +16651,20 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       html += m.excesos.map(x => `<div class="ref-exceso"><span>${escapeHtml(x.cat)} superó por <span class="ref-num">S/${fmt(x.exceso)}</span></span><button type="button" class="ref-exceso-btn" data-ref-exceso="${escapeHtml(x.cat)}" onclick="abrirReacomodoReferencia(this.dataset.refExceso)">Reacomodar</button></div>`).join('');
       html += m.filas.map(f => {
         if (!f.referencia) {
-          return `<div class="ref-row off" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>S/${fmt(f.gastado)}</b> / —</span></div></div>`;
+          return `<div class="ref-row off" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt">—</span></div></div>`;
         }
         const exceso = redondearDinero(f.gastado - f.referencia);
         const pct = Math.max(0, Math.min(100, f.gastado / f.referencia * 100));
-        return `<div class="ref-row" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>S/${fmt(f.gastado)}</b> / S/${fmt(f.referencia)}</span></div>
+        return `<div class="ref-row" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt">Quedan <b>${montoFilaReferencias(Math.max(0, f.referencia - f.gastado), oculto)}</b></span></div>
           <div class="ref-bar-row"><div class="ref-bar"><i style="width:${pct}%"></i></div>${exceso > 0.005 ? `<span class="ref-over">+S/${fmt(exceso)}</span>` : ''}</div></div>`;
       }).join('');
+      // BUILD386 · cierre: lo que quedan las categorías + esta fila = Disponible (número grande).
+      // Absorbe lo sin asignar, los excesos y lo gastado en categorías sin referencia.
+      const sumaQuedan = m.filas.reduce((t, f) => t + (f.referencia ? Math.max(0, f.referencia - f.gastado) : 0), 0);
+      const cierre = redondearDinero(m.quedaVariables - sumaQuedan);
+      if (Math.abs(cierre) > 0.005) {
+        html += `<div class="ref-row off ref-row-cierre"><div class="ref-row-top"><span class="ref-name">${cierre > 0 ? 'Sin asignar' : 'Excedes'}</span><span class="ref-amt">${cierre > 0 ? '' : '−'}${montoFilaReferencias(Math.abs(cierre), oculto)}</span></div></div>`;
+      }
     }
     html += '</div>';
     root.innerHTML = html;

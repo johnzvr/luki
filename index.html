@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '382';
+  const LEDGER_BUILD = '383';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16279,8 +16279,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const reduccionMeta = metaDesde !== null ? redondearDinero(metaDesde - meta) : 0;
     const fijos = cargosFijosReferencias();
     const adelantos = totalAdelantosReferencias();
-    const disponible = redondearDinero(inicio - meta - fijos.total - adelantos);
     const gasto = gastoPorCategoriaReferencias(state.log);
+    // BUILD383 · Presupuesto en vivo: sigue al Disponible real. Lo que bajó por fuera de las
+    // categorías (sin categoría, ajustes de saldo) se descuenta como "Fuera de categorías".
+    const vivo = presupuestoVivoReferencias(meta, gasto);
+    const presupuestoBase = redondearDinero(inicio - meta - fijos.total - adelantos);
+    const fueraCategorias = redondearDinero(presupuestoBase - vivo.presupuesto);
+    const disponible = vivo.presupuesto;
     const sugerencia = sugerenciaReferencias(disponible);
     const sugerido = referenciasEnModoSugerido();
     const refDe = cat => sugerido ? (sugerencia.refs[cat] || null) : referenciaEfectivaDeCategoria(cat);
@@ -16311,8 +16316,98 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     // BUILD373 · vista del mes completo: Sin asignar = Disponible − Tu plan (suma de referencias).
     const resumen = resumenPlanReferencias(suma, disponible, meta);
     resumen.gastadoVar = redondearDinero(filas.reduce((t, f) => t + f.gastado, 0));
-    return { inicio, meta, metaBase, reduccionMeta, fijos, adelantos, disponible, filas, suma, sugerencia, sugerido, ahorro, excesos,
+    return { inicio, meta, metaBase, reduccionMeta, fijos, adelantos, fueraCategorias, quedaVariables: vivo.queda, disponible, filas, suma, sugerencia, sugerido, ahorro, excesos,
       ...resumen };
+  }
+
+  // BUILD383 · Lo que queda hoy para las categorías variables, sin contar dos veces:
+  // Gastable real (Disponible − Meta; ya restó todo lo gastado y los proyectados reservados)
+  // − adelantos pendientes (aún no salen del Disponible)
+  // + proyectados pendientes de categorías variables (el Presupuesto base no los resta).
+  // Presupuesto = gastado en variables + lo que queda.
+  function presupuestoVivoReferencias(meta, gasto) {
+    const variables = categoriasVariablesReferencias();
+    let adelantosPend = 0;
+    try { adelantosPend = adelantosPendientes().reduce((t, it) => t + (Number(it.monto) || 0), 0); } catch (e) {}
+    let proyVar = 0;
+    (Array.isArray(state.log) ? state.log : []).forEach(mov => {
+      if (!mov || mov.etiqueta === 'recalcula' || !esMovimientoProyectado(mov)) return;
+      if (variables.includes(categoriaCanonicaReferencias(mov.categoria))) proyVar += Math.max(0, Number(mov.monto) || 0);
+    });
+    const gastable = (Number(state.totalDisponible) || 0) - meta;
+    const queda = redondearDinero(gastable - adelantosPend + proyVar);
+    const gastadoVar = variables.reduce((t, cat) => t + (Number(gasto[cat]) || 0), 0);
+    return { queda, presupuesto: redondearDinero(gastadoVar + queda) };
+  }
+
+  // BUILD383 · Actualizar: reparte lo que queda hoy entre las categorías con referencia.
+  // Cada una queda en lo gastado + su parte (en proporción a lo que le quedaba; si a ninguna
+  // le quedaba nada, a su referencia). Bloqueadas y sin referencia no cambian. En decenas.
+  function planActualizarReferencias(m = modeloReferencias()) {
+    const bloqueadas = referenciasBloqueadas();
+    let libre = m.quedaVariables;
+    const candidatas = [];
+    m.filas.forEach(f => {
+      const ref = f.referencia || 0;
+      if (ref <= 0.005) return;
+      if (bloqueadas[f.cat]) { libre -= Math.max(0, ref - f.gastado); return; }
+      candidatas.push({ cat: f.cat, ref, gastado: f.gastado, resto: Math.max(0, ref - f.gastado) });
+    });
+    libre = redondearDinero(Math.max(0, libre));
+    const cambios = [];
+    if (!candidatas.length) return { libre, cambios };
+    const totalResto = candidatas.reduce((t, c) => t + c.resto, 0);
+    const peso = c => totalResto > 0.005 ? c.resto : c.ref;
+    const totalPeso = candidatas.reduce((t, c) => t + peso(c), 0) || 1;
+    candidatas.forEach(c => {
+      const bruto = c.gastado + libre * peso(c) / totalPeso;
+      c.nuevo = Math.max(c.gastado, Math.floor(bruto / 10 + 1e-9) * 10);
+      c.frac = bruto - c.nuevo;
+    });
+    // Las decenas que sobran del redondeo van a las de mayor fracción.
+    let sobra = redondearDinero(candidatas.reduce((t, c) => t + c.gastado, 0) + libre - candidatas.reduce((t, c) => t + c.nuevo, 0));
+    candidatas.slice().sort((a, b) => b.frac - a.frac).forEach(c => {
+      if (sobra + 0.005 < 10 || c.frac <= 0.005) return;
+      const siguiente = (Math.floor(c.nuevo / 10 + 1e-9) + 1) * 10;
+      const extra = siguiente - c.nuevo;
+      if (extra <= sobra + 0.005) { c.nuevo = siguiente; sobra -= extra; }
+    });
+    candidatas.forEach(c => {
+      c.nuevo = redondearDinero(c.nuevo);
+      if (Math.abs(c.nuevo - c.ref) > 0.005) cambios.push({ cat: c.cat, antes: c.ref, despues: c.nuevo, gastado: c.gastado });
+    });
+    return { libre, cambios };
+  }
+
+  function abrirActualizarReferencias() {
+    const m = modeloReferencias();
+    const plan = planActualizarReferencias(m);
+    if (!plan.cambios.length) { toast('Tus referencias ya están al día'); return; }
+    const bloq = Object.keys(referenciasBloqueadas()).filter(cat => referenciasBloqueadas()[cat] && m.filas.some(f => f.cat === cat && f.referencia));
+    openModal(`
+      <h2>Actualizar <span class="accent">referencias</span></h2>
+      <p class="modal-sub">Te quedan <b class="ref-num">S/${fmt(m.quedaVariables)}</b> para tus categorías variables. Se reparten según lo que le queda a cada una${bloq.length ? '; las bloqueadas no cambian' : ''}. Vale solo para este ciclo.</p>
+      <div class="ref-movs">${plan.cambios.map(c => `<div class="ref-mov"><span class="ref-mov-main"><span class="ref-mov-det">${escapeHtml(c.cat)}</span>
+        <span class="ref-mov-meta">Gastado S/${fmt(c.gastado)}</span></span>
+        <span class="ref-mov-amt">S/${fmt(c.antes)} → S/${fmt(c.despues)}</span></div>`).join('')}</div>
+      <div class="modal-buttons">
+        <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn-primary" onclick="confirmarActualizarReferencias()">Actualizar</button>
+      </div>
+    `);
+  }
+
+  function confirmarActualizarReferencias() {
+    if (referenciasEnModoSugerido()) guardarSugerenciaReferencias(modeloReferencias().sugerencia.refs);
+    const plan = planActualizarReferencias();
+    closeModal();
+    if (!plan.cambios.length) { toast('Tus referencias ya están al día'); return; }
+    const ajustes = ajustesCicloReferencias(true);
+    plan.cambios.forEach(c => { ajustes[c.cat] = c.despues; });
+    saveState({ markModified: true, sync: true });
+    renderReferencias();
+    requestAnimationFrame(updateViewHeight);
+    toast(`Referencias actualizadas · ${plan.cambios.length} ${plan.cambios.length === 1 ? 'categoría' : 'categorías'}`);
   }
 
   function ahorroProyectadoReferencias(meta, disponible, pares) {
@@ -16496,6 +16591,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           <div class="ref-calc-row link${referenciasFijosAbierto ? ' open' : ''}" onclick="toggleReferenciasFijos()"><span>− Fijos</span>${montoPrivadoReferencias(m.fijos.total, oculto)}</div>
           ${referenciasFijosAbierto ? `<div class="ref-fijos">${fijosHtml}</div>` : ''}
           ${m.adelantos > 0.005 ? `<div class="ref-calc-row"><span>− Adelantos</span>${montoPrivadoReferencias(m.adelantos, oculto)}</div>` : ''}
+          ${Math.abs(m.fueraCategorias) > 0.005 ? `<div class="ref-calc-row"><span>${m.fueraCategorias > 0 ? '−' : '+'} Fuera de categorías<span class="ref-calc-note">Sin categoría y ajustes de saldo</span></span>${montoPrivadoReferencias(Math.abs(m.fueraCategorias), oculto)}</div>` : ''}
           <div class="ref-calc-row"><span>− Meta de ahorro${m.reduccionMeta > 0.005 ? `<span class="ref-calc-note">Reducida desde ${oculto ? 'S/ ****' : 'S/' + fmt(m.metaBase)}</span>` : ''}</span>${montoPrivadoReferencias(m.meta, oculto)}</div>
           <div class="ref-calc-row total"><span>= Presupuesto</span>${montoPrivadoReferencias(m.disponible, oculto)}</div>
           <div class="ref-calc-row"><span>− Tu plan</span>${montoPrivadoReferencias(m.suma, oculto)}</div>
@@ -16503,7 +16599,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>` : ''}
       </div>
       <div class="ref-head"><span class="ref-title">${referenciasEditando ? 'Editar referencias' : 'Por categoría'}</span>
-        <span class="ref-actions">${referenciasEditando ? '<button type="button" class="ref-btn" onclick="sugerirReferencias()">Sugerir</button>' : ''}<button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button></span></div>`;
+        <span class="ref-actions">${referenciasEditando ? '<button type="button" class="ref-btn" onclick="sugerirReferencias()">Sugerir</button>' : '<button type="button" class="ref-btn" onclick="abrirActualizarReferencias()">Actualizar</button>'}<button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button></span></div>`;
 
     if (referenciasEditando) {
       // BUILD368 · un slider por categoría (saltos de S/ 10).

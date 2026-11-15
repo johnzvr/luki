@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '387';
+  const LEDGER_BUILD = '388';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16434,7 +16434,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     saveState({ markModified: true, sync: true });
     renderReferencias();
     requestAnimationFrame(updateViewHeight);
-    toast('Referencias actualizadas');
+    toast('Reparto aplicado');
   }
 
   function ahorroProyectadoReferencias(meta, disponible, pares) {
@@ -16632,11 +16632,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         </div>` : ''}
       </div>
       <div class="ref-head"><span class="ref-title">${referenciasEditando ? 'Editar referencias' : 'Por categoría'}</span>
-        <span class="ref-actions">${referenciasEditando ? '<button type="button" class="ref-btn" onclick="sugerirReferencias()">Sugerir</button>' : '<button type="button" class="ref-btn" onclick="abrirActualizarReferencias()">Actualizar</button>'}${m.activas ? `<button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button>` : ''}</span></div>`;
+        <span class="ref-actions">${referenciasEditando ? '<button type="button" class="ref-btn" onclick="sugerirReferencias()">Sugerir</button>' : '<button type="button" class="ref-btn" onclick="abrirActualizarReferencias()">Repartir</button>'}${m.activas ? `<button type="button" class="ref-btn${referenciasEditando ? ' done' : ''}" onclick="toggleReferenciasEdicion()">${referenciasEditando ? 'Listo' : 'Editar'}</button>` : ''}</span></div>`;
 
     if (!m.activas) {
       // BUILD387 · ciclo nuevo en blanco hasta tocar Actualizar.
-      html += `<div class="ref-empty">Toca <b>Actualizar</b> para ver cuánto sería lo ideal gastar en cada categoría con tu Disponible de hoy.</div>`;
+      html += `<div class="ref-empty">Toca <b>Repartir</b> para ver cuánto sería lo ideal gastar en cada categoría con tu Disponible de hoy.</div>`;
     } else if (referenciasEditando) {
       // BUILD368 · un slider por categoría (saltos de S/ 10).
       const det = tipicoDetalleReferencias();

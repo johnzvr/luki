@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '383';
+  const LEDGER_BUILD = '384';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16340,59 +16340,58 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return { queda, presupuesto: redondearDinero(gastadoVar + queda) };
   }
 
-  // BUILD383 · Actualizar: reparte lo que queda hoy entre las categorías con referencia.
-  // Cada una queda en lo gastado + su parte (en proporción a lo que le quedaba; si a ninguna
-  // le quedaba nada, a su referencia). Bloqueadas y sin referencia no cambian. En decenas.
+  // BUILD384 · Actualizar: con lo que queda hoy, cuánto sería lo ideal gastar en cada categoría
+  // desde ahora. Ideal = típico (mediana de 3 ciclos) − lo ya gastado; sin típico, su referencia.
+  // Si no alcanza para todas, se reduce en proporción. Lo que sobra queda sin asignar.
+  // La referencia del ciclo queda en gastado + lo que puede gastar. Bloqueadas no cambian.
   function planActualizarReferencias(m = modeloReferencias()) {
     const bloqueadas = referenciasBloqueadas();
+    const tipico = tipicoPorCategoriaReferencias();
     let libre = m.quedaVariables;
-    const candidatas = [];
+    const items = [];
     m.filas.forEach(f => {
       const ref = f.referencia || 0;
-      if (ref <= 0.005) return;
-      if (bloqueadas[f.cat]) { libre -= Math.max(0, ref - f.gastado); return; }
-      candidatas.push({ cat: f.cat, ref, gastado: f.gastado, resto: Math.max(0, ref - f.gastado) });
+      if (bloqueadas[f.cat]) { if (ref > 0.005) libre -= Math.max(0, ref - f.gastado); return; }
+      const t = Number(tipico[f.cat]) || 0;
+      const base = t > 0.005 ? t : ref;
+      if (base <= 0.005 && ref <= 0.005) return;
+      items.push({ cat: f.cat, ref, gastado: f.gastado, tipico: t, ideal: Math.max(0, base - f.gastado) });
     });
     libre = redondearDinero(Math.max(0, libre));
-    const cambios = [];
-    if (!candidatas.length) return { libre, cambios };
-    const totalResto = candidatas.reduce((t, c) => t + c.resto, 0);
-    const peso = c => totalResto > 0.005 ? c.resto : c.ref;
-    const totalPeso = candidatas.reduce((t, c) => t + peso(c), 0) || 1;
-    candidatas.forEach(c => {
-      const bruto = c.gastado + libre * peso(c) / totalPeso;
-      c.nuevo = Math.max(c.gastado, Math.floor(bruto / 10 + 1e-9) * 10);
-      c.frac = bruto - c.nuevo;
+    const totalIdeal = items.reduce((t, it) => t + it.ideal, 0);
+    const factor = totalIdeal > libre ? (totalIdeal > 0 ? libre / totalIdeal : 0) : 1;
+    items.forEach(it => { it.puede = Math.round(it.ideal * factor / 10) * 10; });
+    let suma = items.reduce((t, it) => t + it.puede, 0);
+    while (suma > libre + 0.005) {
+      const mayor = items.filter(it => it.puede > 0).sort((x, y) => y.puede - x.puede)[0];
+      if (!mayor) break;
+      mayor.puede -= 10; suma -= 10;
+    }
+    items.forEach(it => {
+      it.despues = redondearDinero(it.gastado + it.puede);
+      it.cambia = Math.abs(it.despues - it.ref) > 0.005;
     });
-    // Las decenas que sobran del redondeo van a las de mayor fracción.
-    let sobra = redondearDinero(candidatas.reduce((t, c) => t + c.gastado, 0) + libre - candidatas.reduce((t, c) => t + c.nuevo, 0));
-    candidatas.slice().sort((a, b) => b.frac - a.frac).forEach(c => {
-      if (sobra + 0.005 < 10 || c.frac <= 0.005) return;
-      const siguiente = (Math.floor(c.nuevo / 10 + 1e-9) + 1) * 10;
-      const extra = siguiente - c.nuevo;
-      if (extra <= sobra + 0.005) { c.nuevo = siguiente; sobra -= extra; }
-    });
-    candidatas.forEach(c => {
-      c.nuevo = redondearDinero(c.nuevo);
-      if (Math.abs(c.nuevo - c.ref) > 0.005) cambios.push({ cat: c.cat, antes: c.ref, despues: c.nuevo, gastado: c.gastado });
-    });
-    return { libre, cambios };
+    items.sort((x, y) => y.puede - x.puede || y.gastado - x.gastado);
+    return { libre, items, cambios: items.filter(it => it.cambia), reducido: factor < 1,
+      sobra: redondearDinero(Math.max(0, libre - suma)) };
   }
 
   function abrirActualizarReferencias() {
     const m = modeloReferencias();
     const plan = planActualizarReferencias(m);
-    if (!plan.cambios.length) { toast('Tus referencias ya están al día'); return; }
+    if (!plan.items.length) { toast('Aún no hay típicos ni referencias para calcular'); return; }
     const bloq = Object.keys(referenciasBloqueadas()).filter(cat => referenciasBloqueadas()[cat] && m.filas.some(f => f.cat === cat && f.referencia));
     openModal(`
-      <h2>Actualizar <span class="accent">referencias</span></h2>
-      <p class="modal-sub">Te quedan <b class="ref-num">S/${fmt(m.quedaVariables)}</b> para tus categorías variables. Se reparten según lo que le queda a cada una${bloq.length ? '; las bloqueadas no cambian' : ''}. Vale solo para este ciclo.</p>
-      <div class="ref-movs">${plan.cambios.map(c => `<div class="ref-mov"><span class="ref-mov-main"><span class="ref-mov-det">${escapeHtml(c.cat)}</span>
-        <span class="ref-mov-meta">Gastado S/${fmt(c.gastado)}</span></span>
-        <span class="ref-mov-amt">S/${fmt(c.antes)} → S/${fmt(c.despues)}</span></div>`).join('')}</div>
+      <h2>Lo ideal <span class="accent">desde hoy</span></h2>
+      <p class="modal-sub">Tienes <b class="ref-num">S/${fmt(plan.libre)}</b> para tus categorías variables${bloq.length ? ' (sin contar las bloqueadas)' : ''}. Según lo que sueles gastar, esto es lo que puedes gastar en cada una${plan.reducido ? '. No alcanza para tu típico: se redujo en proporción' : ''}.</p>
+      <div class="ref-movs">${plan.items.map(it => `<div class="ref-mov"><span class="ref-mov-main"><span class="ref-mov-det">${escapeHtml(it.cat)}</span>
+        <span class="ref-mov-meta">Gastado S/${fmt(it.gastado)} · ${it.tipico > 0.005 ? 'típico S/' + fmt(it.tipico) : 'sin típico · usa tu referencia'}</span></span>
+        <span class="ref-mov-amt">S/${fmt(it.puede)}</span></div>`).join('')}</div>
+      ${plan.sobra > 0.005 ? `<p class="ref-det-hint">Sin asignar <b class="ref-num">S/${fmt(plan.sobra)}</b> · se suma a lo que ahorrarías.</p>` : ''}
+      <p class="ref-det-hint">Al aplicar, tus referencias de este ciclo quedan en lo gastado + lo que puedes gastar. Tu base no cambia.</p>
       <div class="modal-buttons">
         <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button class="btn-primary" onclick="confirmarActualizarReferencias()">Actualizar</button>
+        <button class="btn-primary" onclick="confirmarActualizarReferencias()">Aplicar</button>
       </div>
     `);
   }

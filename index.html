@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '390';
+  const LEDGER_BUILD = '391';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -16686,7 +16686,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
           return `<div class="ref-row off" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt">—</span></div></div>`;
         }
         const exceso = redondearDinero(f.gastado - f.referencia);
-        const pct = Math.max(0, Math.min(100, f.gastado / f.referencia * 100));
+        // BUILD391 · la barra muestra lo que queda: empieza llena y baja al gastar (como el arco de Inicio).
+        const pct = Math.max(0, Math.min(100, (f.referencia - f.gastado) / f.referencia * 100));
       // BUILD389 · el ojo de Referencias solo oculta el número grande y su desglose.
         return `<div class="ref-row" data-ref-cat="${escapeHtml(f.cat)}" onclick="abrirDetalleReferencia(this.dataset.refCat)"><div class="ref-row-top"><span class="ref-name">${escapeHtml(f.cat)}</span><span class="ref-amt"><b>${montoFilaReferencias(Math.max(0, f.referencia - f.gastado), false)}</b></span></div>
           <div class="ref-bar-row"><div class="ref-bar"><i style="width:${pct}%"></i></div>${exceso > 0.005 ? `<span class="ref-over">+S/${fmt(exceso)}</span>` : ''}</div></div>`;

@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '391';
+  const LEDGER_BUILD = '392';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -14462,7 +14462,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const tipoForm = valorTipoFormMov(mov);
     const permitidos = mov.adelantoOrigenId ? ['DS']
       : esCuotaPropia ? ['DSP']
-        : esMovimientoDSCubierto(mov) ? ['S', 'DSC', 'F', 'FDS']
+        : esMovimientoDSCubierto(mov) ? ['S', 'DS', 'DSC', 'F', 'FDS'] // BUILD392 · DS+C/A → DS permitido
           : ['S', 'DS', 'F', 'FDS'];
     const elegidos = mov.etiqueta === 'sem' ? null
       : (Array.isArray(mov.bloqueElegido) ? mov.bloqueElegido : (Number.isInteger(mov.bloqueElegido) ? [mov.bloqueElegido] : undefined));
@@ -14826,6 +14826,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const esTarjeta = ['DS', 'DSC', 'DSP', 'FDS'].includes(valor);
     if (cardRow) cardRow.style.display = esTarjeta ? '' : 'none';
     mostrarBloquesFormMov(['S', 'DS', 'DSP'].includes(valor));
+    // BUILD392 · la casilla A solo aplica a DS+C.
+    const advRow = document.getElementById('editMovementAdvanceRow');
+    if (advRow) advRow.style.display = valor === 'DSC' ? '' : 'none';
   }
 
   function saveMovementEdit(idx) {
@@ -14838,7 +14841,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const tcUsdEdicion = Number(editMovementTc);
     const editaUsd = editMovementCurrency === 'USD' && tcUsdEdicion > 0;
     const monto = editaUsd ? redondearDinero(valorIngresado * tcUsdEdicion) : valorIngresado;
-    const tipo = tipoBaseFormMov(document.querySelector('input[name="editMovementType"]:checked')?.value); // BUILD382 · DS+C/DS+P son DS
+    const valorTipoElegido = document.querySelector('input[name="editMovementType"]:checked')?.value; // BUILD392
+    const tipo = tipoBaseFormMov(valorTipoElegido); // BUILD382 · DS+C/DS+P son DS
     let detalle = document.getElementById('editMovementDetail')?.value.trim() || '';
     const valorValido = Number.isFinite(valorIngresado) && valorIngresado > 0;
     if (valorValido) detalle = editaUsd ? detalleConUsdActualizado(detalle, valorIngresado, tcUsdEdicion) : detalleSinUsd(detalle);
@@ -14850,7 +14854,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const tarjetaId = esMovimientoTarjeta(tipo)
       ? normalizarTarjetaId(document.getElementById('editMovementCard')?.value)
       : '';
-    const editCubierto = tipo === 'DS' && esMovimientoDSCubierto(state.log[idx]);
+    // BUILD392 · sigue cubierto solo si se dejó en DS+C; elegir DS lo vuelve un DS normal.
+    const editCubierto = valorTipoElegido === 'DSC' && esMovimientoDSCubierto(state.log[idx]);
+    const cubiertoCambio = esMovimientoDSCubierto(state.log[idx]) !== editCubierto;
     const editAdelanto = editCubierto && !!document.getElementById('editMovementAdvance')?.checked; // BUILD330
     // BUILD382 · sin lista de bloques (queda un solo bloque) se conserva el "sem" que tenía.
     let etiqueta = !editCubierto && afectaPresupuestoSalarial(tipo) && state.log[idx]?.etiqueta === 'sem' ? 'sem' : null;
@@ -14890,7 +14896,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     // Detalle y categoría son metadata. Si monto/tipo/SEM no cambiaron,
     // guardar directamente sin entrar al motor de recálculo.
-    if (!montoCambio && !tipoCambio && !semCambio && !bloqueCambio) {
+    if (!montoCambio && !tipoCambio && !semCambio && !bloqueCambio && !cubiertoCambio) { // BUILD392 · DS+C → DS recalcula
       currentMov.detalle = detalle;
       if (metaUsdEdicion) Object.assign(currentMov, metaUsdEdicion);
       if (categoria) currentMov.categoria = categoria;
@@ -14958,8 +14964,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       else delete editedMov.categoria;
       if (esMovimientoTarjeta(tipo)) editedMov.tarjetaId = tarjetaId;
       else delete editedMov.tarjetaId;
-      if (tipo === 'DS' && esMovimientoDSCubierto(originalMov)) editedMov.cubierto = true;
+      if (editCubierto) editedMov.cubierto = true; // BUILD392
       else delete editedMov.cubierto;
+      // BUILD392 · DS+C/A → DS: el monto completo sale del Disponible y de los bloques, una sola vez.
+      if (esMovimientoDSCubierto(originalMov) && !editCubierto && !planCuotaPropia) delete editedMov.impactoPresupuesto;
       if (editedMov.cubierto && editAdelanto) editedMov.adelanto = true; // BUILD330
       else delete editedMov.adelanto;
 

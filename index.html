@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '392';
+  const LEDGER_BUILD = '393';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -14460,10 +14460,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     editMovementTc = esUsd ? Number(infoUsd.tipoCambio) : null;
     const valor = esUsd ? Number(infoUsd.montoOriginal) : Number(mov.monto);
     const tipoForm = valorTipoFormMov(mov);
-    const permitidos = mov.adelantoOrigenId ? ['DS']
-      : esCuotaPropia ? ['DSP']
-        : esMovimientoDSCubierto(mov) ? ['S', 'DS', 'DSC', 'F', 'FDS'] // BUILD392 · DS+C/A → DS permitido
-          : ['S', 'DS', 'F', 'FDS'];
+    // BUILD393 · los 6 tipos siempre disponibles; solo el adelanto asignado queda fijo en DS.
+    const permitidos = mov.adelantoOrigenId ? ['DS'] : ['S', 'DS', 'DSC', 'DSP', 'F', 'FDS'];
     const elegidos = mov.etiqueta === 'sem' ? null
       : (Array.isArray(mov.bloqueElegido) ? mov.bloqueElegido : (Number.isInteger(mov.bloqueElegido) ? [mov.bloqueElegido] : undefined));
     const bloquesHtml = htmlBloquesFormMov({
@@ -14474,7 +14472,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       monto: () => {
         const v = Number(document.getElementById('editMovementAmount')?.value) || 0;
         const soles = editMovementCurrency === 'USD' && Number(editMovementTc) > 0 ? v * Number(editMovementTc) : v;
-        return esCuotaPropia ? dividirCuotaPropia(soles).actual : soles;
+        const esDSPElegido = document.querySelector('input[name="editMovementType"]:checked')?.value === 'DSP'; // BUILD393
+        return esDSPElegido ? dividirCuotaPropia(soles).actual : soles;
       }
     });
     openModal(`
@@ -14501,10 +14500,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       </div>
       ${htmlTarjetaFormMov('editMovementCard', 'editMovementCardRow', tarjetaIdMovimiento(mov))}
       ${bloquesHtml}
-      ${esMovimientoDSCubierto(mov) ? `<label class="edit-sem-row" id="editMovementAdvanceRow" style="margin-bottom:8px;">
+      ${mov.adelantoOrigenId ? '' : `<label class="edit-sem-row" id="editMovementAdvanceRow" style="margin-bottom:8px;">
         <span>A · Lo pago con el próximo sueldo</span>
         <input type="checkbox" id="editMovementAdvance" ${esMovimientoAdelanto(mov) ? 'checked' : ''}>
-      </label>` : ''}
+      </label>`}
       <label class="edit-sem-row" id="editMovementFijoRow">
         <span>Recurrente · sugerirlo cada ciclo</span>
         <input type="checkbox" id="editMovementFijo" ${esFijoRecurrente([claveDetalleAprendizaje(mov.detalle)]) ? 'checked' : ''}>
@@ -14829,6 +14828,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     // BUILD392 · la casilla A solo aplica a DS+C.
     const advRow = document.getElementById('editMovementAdvanceRow');
     if (advRow) advRow.style.display = valor === 'DSC' ? '' : 'none';
+    if (typeof actualizarBloquesFormMov === 'function' && formMovCtx) actualizarBloquesFormMov(); // BUILD393 · DS+P resta la mitad
   }
 
   function saveMovementEdit(idx) {
@@ -14855,8 +14855,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ? normalizarTarjetaId(document.getElementById('editMovementCard')?.value)
       : '';
     // BUILD392 · sigue cubierto solo si se dejó en DS+C; elegir DS lo vuelve un DS normal.
-    const editCubierto = valorTipoElegido === 'DSC' && esMovimientoDSCubierto(state.log[idx]);
+    const editCubierto = valorTipoElegido === 'DSC'; // BUILD393 · cualquier movimiento puede pasar a DS+C
     const cubiertoCambio = esMovimientoDSCubierto(state.log[idx]) !== editCubierto;
+    const quedaDSP = valorTipoElegido === 'DSP'; // BUILD393
+    const dspCambio = esMovimientoCuotasPropias(state.log[idx]) !== quedaDSP;
     const editAdelanto = editCubierto && !!document.getElementById('editMovementAdvance')?.checked; // BUILD330
     // BUILD382 · sin lista de bloques (queda un solo bloque) se conserva el "sem" que tenía.
     let etiqueta = !editCubierto && afectaPresupuestoSalarial(tipo) && state.log[idx]?.etiqueta === 'sem' ? 'sem' : null;
@@ -14885,10 +14887,6 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     const currentMov = state.log[idx];
     const planCuotaPropia = esMovimientoCuotasPropias(currentMov) ? planCuotasDeMovimiento(currentMov) : null;
-    if (planCuotaPropia && tipo !== 'DS') {
-      toast('DS+P debe permanecer como variante de DS. Elimina el movimiento si quieres cambiar su tipo.', true);
-      return;
-    }
     const montoCambio = Math.abs((Number(currentMov?.monto) || 0) - monto) > 0.0001;
     const tipoCambio = normalizarTipoMovimiento(currentMov?.tipo) !== normalizarTipoMovimiento(tipo);
     const semCambio = (currentMov?.etiqueta === 'sem' ? 'sem' : null) !== etiqueta;
@@ -14896,7 +14894,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     // Detalle y categoría son metadata. Si monto/tipo/SEM no cambiaron,
     // guardar directamente sin entrar al motor de recálculo.
-    if (!montoCambio && !tipoCambio && !semCambio && !bloqueCambio && !cubiertoCambio) { // BUILD392 · DS+C → DS recalcula
+    if (!montoCambio && !tipoCambio && !semCambio && !bloqueCambio && !cubiertoCambio && !dspCambio) { // BUILD392 · DS+C → DS recalcula
       currentMov.detalle = detalle;
       if (metaUsdEdicion) Object.assign(currentMov, metaUsdEdicion);
       if (categoria) currentMov.categoria = categoria;
@@ -14941,7 +14939,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         tipo,
         etiqueta,
         detalle,
-        ...(planCuotaPropia ? {
+        ...(planCuotaPropia && quedaDSP ? {
           cuotaPropia: true,
           impactoPresupuesto: redondearDinero(monto / 2),
           cuotaNumero: 1,
@@ -14956,7 +14954,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       else delete editedMov.bloqueElegido;
       // BUILD303 · los gastos en US$ guardan su impacto en el presupuesto; si era el monto
       // completo, debe seguir al nuevo monto (antes quedaba el valor anterior y el Disponible no cambiaba).
-      if (!planCuotaPropia && Number.isFinite(Number(originalMov.impactoPresupuesto))
+      if (!(planCuotaPropia && quedaDSP) && Number.isFinite(Number(originalMov.impactoPresupuesto))
         && Math.abs(Number(originalMov.impactoPresupuesto) - (Number(originalMov.monto) || 0)) < 0.01) {
         editedMov.impactoPresupuesto = redondearDinero(monto);
       }
@@ -14967,7 +14965,27 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       if (editCubierto) editedMov.cubierto = true; // BUILD392
       else delete editedMov.cubierto;
       // BUILD392 · DS+C/A → DS: el monto completo sale del Disponible y de los bloques, una sola vez.
-      if (esMovimientoDSCubierto(originalMov) && !editCubierto && !planCuotaPropia) delete editedMov.impactoPresupuesto;
+      if (!quedaDSP && (esMovimientoDSCubierto(originalMov) || planCuotaPropia)) delete editedMov.impactoPresupuesto;
+      // BUILD393 · deja de ser DS+P: se quitan los datos de la cuota (el plan se borra al guardar).
+      if (planCuotaPropia && !quedaDSP) {
+        ['cuotaPropia', 'planCuotasId', 'cuotaNumero', 'cuotasTotal', 'cuotaMoneda', 'cuotaOriginal', 'cuotaAutomatica']
+          .forEach(k => delete editedMov[k]);
+      }
+      // BUILD393 · pasa a DS+P: nuevo plan 50/50; ahora sale solo la mitad.
+      let nuevoPlanDSP = null;
+      if (quedaDSP && !planCuotaPropia) {
+        nuevoPlanDSP = crearPlanCuotaPropia({ monto, detalle, categoria, tarjetaId, fecha: fechaMovimientoEdicion(originalMov) });
+        Object.assign(editedMov, {
+          cuotaPropia: true,
+          planCuotasId: nuevoPlanDSP.plan.id,
+          impactoPresupuesto: nuevoPlanDSP.actual,
+          cuotaNumero: 1,
+          cuotasTotal: 2,
+          cuotaMoneda: 'PEN',
+          cuotaOriginal: nuevoPlanDSP.actual,
+          cuotaAutomatica: false
+        });
+      }
       if (editedMov.cubierto && editAdelanto) editedMov.adelanto = true; // BUILD330
       else delete editedMov.adelanto;
 
@@ -15013,7 +15031,14 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
       restoreMovementState(rebuiltState);
       state.log = rebuiltLog;
-      if (planCuotaPropia) {
+      if (planCuotaPropia && !quedaDSP && Array.isArray(state.planesCuotas)) { // BUILD393
+        state.planesCuotas = state.planesCuotas.filter(plan => plan?.id !== planCuotaPropia.id);
+      }
+      if (nuevoPlanDSP) { // BUILD393
+        if (!Array.isArray(state.planesCuotas)) state.planesCuotas = [];
+        state.planesCuotas.push(nuevoPlanDSP.plan);
+      }
+      if (planCuotaPropia && quedaDSP) {
         const primera = redondearDinero(monto / 2);
         const segunda = redondearDinero(monto - primera);
         planCuotaPropia.detalle = detalle;

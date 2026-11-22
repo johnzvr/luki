@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '394';
+  const LEDGER_BUILD = '395';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -13560,6 +13560,75 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return { currentIdx, bloqueIdx: lista, exceso: resultado.exceso, cuota: resultado.cuota, futuros: resultado.repartos };
   }
 
+  // BUILD395 · Realizar proyectado: cuánto devolvió la reserva a cada bloque (con reserva vs sin ella).
+  // El cobro real sale de esos mismos bloques: a igual monto, ningún bloque cambia. Si cuesta más,
+  // la diferencia sale del bloque actual; si cuesta menos, se devuelve en proporción.
+  function repartoReservaProyectado(semanasConReserva, semanasSinReserva, impacto, fecha = new Date()) {
+    if (!Array.isArray(semanasConReserva) || !Array.isArray(semanasSinReserva) || !(impacto > 0)) return null;
+    const hoy = calcularSemanaIdxParaFecha(fecha);
+    if (hoy < 0 || hoy >= semanasSinReserva.length) return null;
+    const deltas = [];
+    for (let i = hoy; i < semanasSinReserva.length; i++) {
+      const d = redondearDinero((Number(semanasSinReserva[i]?.presupuesto) || 0) - (Number(semanasConReserva[i]?.presupuesto) || 0));
+      if (d > 0.004) deltas.push([i, d]);
+    }
+    const reserva = deltas.reduce((s, [, d]) => s + d, 0);
+    if (!(reserva > 0.004)) return null;
+    let reparto;
+    if (impacto >= reserva) {
+      reparto = deltas.map(([i, d]) => [i, d]);
+      const extra = impacto - reserva;
+      if (extra > 0.004) {
+        const k = reparto.findIndex(([i]) => i === hoy);
+        if (k >= 0) reparto[k][1] += extra;
+        else reparto.unshift([hoy, extra]);
+      }
+    } else {
+      reparto = deltas.map(([i, d]) => [i, d * impacto / reserva]);
+    }
+    reparto = reparto.map(([i, a]) => [i, redondearDinero(a)]);
+    const ajuste = redondearDinero(impacto - reparto.reduce((s, [, a]) => s + a, 0));
+    if (Math.abs(ajuste) > 0.0001) reparto[0][1] = redondearDinero(reparto[0][1] + ajuste);
+    return reparto;
+  }
+
+  // BUILD395 · resta montos fijos por bloque (escalados si el monto cambió al editar).
+  // Si un bloque no alcanza, el faltante pasa al siguiente; al final lo cubre el bloque actual.
+  function aplicarGastoRepartoFijo(semanas, monto, totalDisponibleDespues, metaResidual, reparto, fechaReferencia = new Date()) {
+    if (!Array.isArray(semanas) || semanas.length === 0) return { currentIdx: -1, exceso: monto, futuros: [] };
+    const currentIdx = calcularSemanaIdxParaFecha(fechaReferencia);
+    if (currentIdx < 0 || currentIdx >= semanas.length) return { currentIdx: -1, exceso: monto, futuros: [] };
+    const lista = (Array.isArray(reparto) ? reparto : [])
+      .map(([i, a]) => [Number(i), Number(a)])
+      .filter(([i, a]) => Number.isInteger(i) && i >= currentIdx && i < semanas.length && a > 0)
+      .sort((x, y) => x[0] - y[0]);
+    const total = lista.reduce((s, [, a]) => s + a, 0);
+    if (!(total > 0)) return aplicarGastoEnBloques(semanas, monto, totalDisponibleDespues, metaResidual, null, fechaReferencia);
+    let carry = 0;
+    const futuros = [];
+    lista.forEach(([i, a]) => {
+      const necesita = a * monto / total + carry;
+      const disponible = Math.max(0, Number(semanas[i]?.presupuesto) || 0);
+      const toma = Math.min(necesita, disponible);
+      semanas[i].presupuesto = redondearDinero(disponible - toma);
+      carry = necesita - toma;
+      futuros.push({ index: i, descuento: toma });
+    });
+    const exceso = redondearDinero(carry);
+    if (exceso > 0.005) {
+      const ultimo = lista[lista.length - 1][0];
+      semanas[ultimo].exceso = redondearDinero((Number(semanas[ultimo].exceso) || 0) + exceso);
+      const gastableDespues = Math.max(0, totalDisponibleDespues - (metaResidual || 0));
+      let sumaActivos = 0;
+      for (let i = currentIdx; i < semanas.length; i++) sumaActivos += Number(semanas[i]?.presupuesto) || 0;
+      const diferencia = redondearDinero(gastableDespues - redondearDinero(sumaActivos));
+      if (Math.abs(diferencia) > 0.005) {
+        semanas[currentIdx].presupuesto = redondearDinero((Number(semanas[currentIdx].presupuesto) || 0) + diferencia);
+      }
+    }
+    return { currentIdx, exceso, futuros };
+  }
+
   // BUILD327 · cuánto faltaría cubrir si el gasto se reparte entre esos bloques (simulación, no guarda nada).
   function excesoBloquesMultiples(monto, indices, fecha) {
     const cur = calcularSemanaIdxParaFecha(fecha || new Date());
@@ -13668,6 +13737,9 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
         next.metaResidual,
         fechaMovimiento
       );
+    } else if (Array.isArray(mov.repartoBloques) && mov.repartoBloques.length && mov.bloqueElegido === undefined && mov.etiqueta !== 'sem') {
+      // BUILD395 · cobro de un proyectado: sale de donde estaba la reserva
+      aplicarGastoRepartoFijo(next.semanas, impactoPresupuesto, next.totalDisponible, next.metaResidual, mov.repartoBloques, fechaMovimiento);
     } else if ((Number.isInteger(mov.bloqueElegido) || (Array.isArray(mov.bloqueElegido) && mov.bloqueElegido.length > 1)) && mov.etiqueta !== 'sem') {
       // BUILD323 · gasto a un bloque elegido (BUILD327 · o a varios)
       aplicarGastoEnBloqueElegido(next.semanas, impactoPresupuesto, next.totalDisponible, next.metaResidual, mov.bloqueElegido, fechaMovimiento);
@@ -14263,6 +14335,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const bloquesHtml = htmlBloquesFormMov({
       fecha: new Date(),
       simular: false,
+      reserva: true, // BUILD395
       monto: () => {
         const v = Number(document.getElementById('projectedFinalAmount')?.value) || 0;
         const tc = projectedApiExchangeRate();
@@ -14365,12 +14438,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       // Quita primero la reserva proyectada y reconstruye todo lo posterior.
       // Luego registra el DS real HOY: así el presupuesto nunca se descuenta dos veces.
       const reconstruido = reconstruirSinMovimiento(idx);
+      // BUILD395 · sin tocar la lista, el cobro real sale de los bloques donde estaba la reserva.
+      const reparto = bloques.tocado ? null : repartoReservaProyectado(estadoAntes.semanas, reconstruido.rebuiltState?.semanas, monto, new Date());
       restoreMovementState(reconstruido.rebuiltState);
       state.log = reconstruido.rebuiltLog;
       state.redoMovement = null;
-      const ok = aplicarMovimiento(monto, tipoFinal, bloques.etiqueta, detalle, {
+      const ok = aplicarMovimiento(monto, tipoFinal, reparto ? null : bloques.etiqueta, detalle, {
         fecha: new Date(),
-        bloqueElegido: bloques.bloqueElegido, // BUILD382
+        bloqueElegido: reparto ? null : bloques.bloqueElegido, // BUILD382
+        repartoBloques: reparto, // BUILD395
         renderizar: false,
         notificar: false,
         metadata: {
@@ -14603,7 +14679,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const hoy = calcularSemanaIdxParaFecha(new Date());
     const total = Array.isArray(state.semanas) ? state.semanas.length : 0;
     if (base < 0 || total - base < 2) return '';
-    formMovCtx = { ...o, base, hoy };
+    formMovCtx = { ...o, base, hoy, tocado: false };
     const rangos = calcularRangoSemanas();
     const filas = [];
     for (let i = base; i < total; i++) {
@@ -14630,6 +14706,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   }
 
   function cambioBloqueFormMov(input) {
+    if (formMovCtx) formMovCtx.tocado = true; // BUILD395
     const inputs = bloquesFormMovInputs();
     if (!inputs.some(i => i.checked)) { input.checked = true; toast('Elige al menos un bloque', true); }
     // Fuera de "Todos", los bloques bloqueados no quedan marcados.
@@ -14644,6 +14721,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   function todosBloquesFormMov() {
     const inputs = bloquesFormMovInputs();
     if (!inputs.length || !formMovCtx) return;
+    formMovCtx.tocado = true; // BUILD395
     const todos = inputs.every(i => i.checked);
     inputs.forEach(i => { i.checked = todos ? Number(i.value) === formMovCtx.base : true; });
     actualizarBloquesFormMov();
@@ -14665,6 +14743,13 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const boton = document.getElementById('formMovBloquesTodos');
     if (boton) boton.textContent = todos ? (base === hoy ? 'Solo el actual' : `Solo el bloque ${base + 1}`) : 'Marcar todos';
     row.querySelectorAll('[data-parte]').forEach(el => { el.textContent = ''; });
+    // BUILD395 · Realizar proyectado sin tocar la lista: el cobro sale de donde estaba la reserva.
+    if (formMovCtx.reserva && !formMovCtx.tocado) {
+      if (resumen) resumen.textContent = 'Como estaba reservado';
+      const notaR = document.getElementById('formMovBloquesNota');
+      if (notaR) notaR.textContent = 'Sale de donde estaba reservado: solo cambia la diferencia.';
+      return;
+    }
     let monto = 0;
     try { monto = Number(formMovCtx.monto?.()) || 0; } catch (e) {}
     let exceso = 0;
@@ -14716,9 +14801,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
   // Todos = "sem" (en DS+P, que no lleva "sem", la lista completa reparte igual); uno o varios = bloqueElegido.
   function bloquesRegistroFormMov(cuotaPropia = false) {
     const sel = leerBloquesFormMov();
-    if (!sel) return { etiqueta: null, bloqueElegido: null };
-    if (sel.todos && !cuotaPropia) return { etiqueta: 'sem', bloqueElegido: null };
-    return { etiqueta: null, bloqueElegido: sel.lista.length === 1 ? sel.lista[0] : sel.lista };
+    const tocado = !!formMovCtx?.tocado; // BUILD395
+    if (!sel) return { etiqueta: null, bloqueElegido: null, tocado: false };
+    if (sel.todos && !cuotaPropia) return { etiqueta: 'sem', bloqueElegido: null, tocado };
+    return { etiqueta: null, bloqueElegido: sel.lista.length === 1 ? sel.lista[0] : sel.lista, tocado };
   }
 
   // Editar movimiento: { etiqueta, bloqueElegido } según la lista (o null si no hay lista).
@@ -14952,6 +15038,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       if (metaUsdEdicion) Object.assign(editedMov, metaUsdEdicion);
       if (bloqueNuevo !== null && bloqueNuevo !== undefined) editedMov.bloqueElegido = bloqueNuevo; // BUILD381
       else delete editedMov.bloqueElegido;
+      if (bloqueCambio || semCambio || !afectaPresupuestoSalarial(tipo) || editCubierto) delete editedMov.repartoBloques; // BUILD395
       // BUILD303 · los gastos en US$ guardan su impacto en el presupuesto; si era el monto
       // completo, debe seguir al nuevo monto (antes quedaba el valor anterior y el Disponible no cambiaba).
       if (!(planCuotaPropia && quedaDSP) && Number.isFinite(Number(originalMov.impactoPresupuesto))
@@ -20951,12 +21038,17 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     try {
       // Igual que Realizar proyectado: se quita la reserva y se registra el cobro real hoy.
       const reconstruido = reconstruirSinMovimiento(idx);
+      // BUILD395 · respeta la lista "¿De qué bloques sale?"; sin tocarla, sale de donde estaba la reserva.
+      const bloques = bloquesRegistroFormMov();
+      const reparto = bloques.tocado ? null : repartoReservaProyectado(estadoAntes.semanas, reconstruido.rebuiltState?.semanas, monto, new Date());
       restoreMovementState(reconstruido.rebuiltState);
       state.log = reconstruido.rebuiltLog;
       state.redoMovement = null;
       bandejaRegistroEnCurso = { id: item.id, monto, desde: Date.now() }; // vincula el correo
-      const ok = aplicarMovimiento(monto, eleccion, null, detalle, {
+      const ok = aplicarMovimiento(monto, eleccion, reparto ? null : bloques.etiqueta, detalle, {
         fecha: new Date(),
+        bloqueElegido: reparto ? null : bloques.bloqueElegido,
+        repartoBloques: reparto,
         renderizar: false,
         notificar: false,
         metadata: {
@@ -22470,6 +22562,10 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     // BUILD323 · bloque elegido (solo S/DS que afectan el presupuesto, bloques futuros)
     const bloqueEl = bloqueElegidoValido(opciones.bloqueElegido, ahora, etiqueta);
     if (bloqueEl !== null && !opciones.soloBloqueActual && !opciones.redistribuirRestantes) mov.bloqueElegido = bloqueEl;
+    // BUILD395 · cobro de un proyectado: sale de los bloques donde estaba la reserva.
+    if (mov.bloqueElegido === undefined && etiqueta !== 'sem' && Array.isArray(opciones.repartoBloques) && opciones.repartoBloques.length) {
+      mov.repartoBloques = opciones.repartoBloques.map(([i, a]) => [Number(i), redondearDinero(Number(a))]);
+    }
 
     state.totalDisponible -= impactoPresupuesto;
     state.gastoTotal += monto;
@@ -22478,6 +22574,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 
     const resultadoBloques = opciones.soloBloqueActual
       ? aplicarGastoSoloBloqueActual(state.semanas, impactoPresupuesto, ahora)
+      : mov.repartoBloques
+        ? aplicarGastoRepartoFijo(state.semanas, impactoPresupuesto, state.totalDisponible, state.metaResidual || 0, mov.repartoBloques, ahora)
       : mov.bloqueElegido !== undefined
         ? aplicarGastoEnBloqueElegido(
             state.semanas,

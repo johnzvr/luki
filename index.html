@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '393';
+  const LEDGER_BUILD = '394';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -21252,7 +21252,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const bloquesHtml = htmlBloquesFormMov({
       fecha: fechaItem,
       simular: true,
-      soloBaseOTodos: inicioDelDia(fechaItem) < inicioDelDia(new Date()), // un día anterior: su bloque o todos
+      // BUILD394 · un día anterior de otro bloque: su bloque o todos. Si es del bloque actual, se elige libre.
+      soloBaseOTodos: inicioDelDia(fechaItem) < inicioDelDia(new Date()) && !retroDelBloqueActual(fechaItem),
       monto: () => {
         const rateAhora = getExchangeRate();
         const soles = item.moneda === 'USD' ? (rateAhora ? Number(item.monto) * rateAhora : 0) : Number(item.monto);
@@ -22205,6 +22206,15 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     return new Date(fallback);
   }
 
+  // BUILD394 · gasto de un día anterior que cae en el mismo bloque que hoy (p. ej. un correo de las 10 p. m.
+  // abierto después de medianoche): puede salir de los bloques que se elijan, como un gasto de hoy.
+  function retroDelBloqueActual(fecha) {
+    const f = new Date(fecha);
+    if (Number.isNaN(f.getTime()) || inicioDelDia(f) >= inicioDelDia(new Date())) return false;
+    const idx = calcularSemanaIdxParaFecha(f);
+    return idx >= 0 && idx === calcularSemanaIdxParaFecha(new Date());
+  }
+
   function construirMovimientoHistorico(monto, tipo, etiqueta, detalle, opciones, snapshot) {
     const ahora = new Date(opciones.fecha);
     const metadata = opciones.metadata || {};
@@ -22243,6 +22253,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       ...(opciones.soloBloqueActual ? { soloBloqueActualSimulador: true } : {}),
       snapshot: cloneMovementSnapshot(snapshot)
     };
+    // BUILD394 · bloques elegidos solo si el día anterior es del bloque actual (si no, cae en el bloque de su fecha).
+    if (retroDelBloqueActual(ahora) && !opciones.soloBloqueActual && !opciones.redistribuirRestantes) {
+      const bloqueEl = bloqueElegidoValido(opciones.bloqueElegido, ahora, etiqueta);
+      if (bloqueEl !== null) mov.bloqueElegido = bloqueEl;
+    }
     return mov;
   }
 

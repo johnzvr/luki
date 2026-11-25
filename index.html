@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '397';
+  const LEDGER_BUILD = '398';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -23067,8 +23067,11 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const hint = document.getElementById('setDisponibleHint');
     if (!el || !hint) return;
     const v = leerDisponibleAjustes();
-    hint.textContent = esCuentaDisponibleAjustes(el) && Number.isFinite(v)
-      ? `= S/ ${fmt(v)} (antes S/ ${fmt(Number(el.dataset.base) || 0)})`
+    // BUILD398 · "S/ antes + S/ cambio = S/ resultado", también después de resolver la cuenta.
+    const base = Number(el.dataset.base) || 0;
+    const cambio = Number.isFinite(v) ? redondearDinero(v - base) : 0;
+    hint.textContent = Number.isFinite(v) && Math.abs(cambio) >= 0.005
+      ? `S/ ${fmt(base)} ${cambio > 0 ? '+' : '−'} S/ ${fmt(Math.abs(cambio))} = S/ ${fmt(v)}`
       : 'Escribe +50 o −20 para sumar o restar al actual.';
   }
 

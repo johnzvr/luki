@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '396';
+  const LEDGER_BUILD = '397';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -22886,7 +22886,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       <p class="modal-sub">Edita cualquier valor. En automático, los bloques se ponderan según sus días restantes.</p>
       <div class="modal-field">
         <label>Total disponible</label>
-        <input type="text" autocomplete="off" id="setDisponible" data-base="${state.totalDisponible.toFixed(2)}" value="${state.totalDisponible.toFixed(2)}" oninput="previewDisponibleAjustes(); autoRecalcPresupuesto()" onblur="resolverDisponibleAjustes()">
+        <input type="text" autocomplete="off" id="setDisponible" data-base="${state.totalDisponible.toFixed(2)}" value="${state.totalDisponible.toFixed(2)}" oninput="previewDisponibleAjustes(); autoRecalcPresupuesto()" onblur="resolverDisponibleAjustes()" onchange="resolverDisponibleAjustes()" onkeydown="if (event.key === 'Enter' || event.key === '=') { event.preventDefault(); resolverDisponibleAjustes(); }">
         <small id="setDisponibleHint" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-dim);">Escribe +50 o −20 para sumar o restar al actual.</small>
       </div>
       <div class="modal-field">
@@ -23042,33 +23042,39 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     autoRecalcPresupuesto();
   }
   
-  // BUILD396 · Total disponible en Ajustes acepta "+50" / "-20": suma o resta al valor actual.
+  // BUILD396/397 · Total disponible en Ajustes acepta cuentas: "+50", "-20", "896.92+50", "896.92+50=".
+  // Si empieza con + o −, se suma o resta al valor actual.
+  function textoDisponibleAjustes(el) {
+    return String(el?.value || '').replace(/\s/g, '').replace(/[−–]/g, '-').replace(/,/g, '.').replace(/=+$/, '');
+  }
+
+  function esCuentaDisponibleAjustes(el) {
+    return /[+\-]/.test(textoDisponibleAjustes(el).replace(/^-?/, '')) || /^[+\-]/.test(textoDisponibleAjustes(el)) || /=\s*$/.test(el?.value || '');
+  }
+
   function leerDisponibleAjustes() {
     const el = document.getElementById('setDisponible');
     if (!el) return NaN;
-    const txt = String(el.value || '').trim().replace(/\s/g, '').replace(/[−–]/g, '-').replace(',', '.');
-    const m = txt.match(/^([+-])(\d+(?:\.\d+)?)$/);
-    if (m) {
-      const base = Number(el.dataset.base) || 0;
-      return redondearDinero(base + (m[1] === '+' ? 1 : -1) * Number(m[2]));
-    }
-    return /^-?\d+(?:\.\d+)?$/.test(txt) ? Number(txt) : NaN;
+    let txt = textoDisponibleAjustes(el);
+    if (/^[+\-]/.test(txt)) txt = (Number(el.dataset.base) || 0).toFixed(2) + txt;
+    if (!/^-?\d+(?:\.\d+)?(?:[+\-]\d+(?:\.\d+)?)*$/.test(txt)) return NaN;
+    const terminos = txt.match(/-?\d+(?:\.\d+)?|[+\-]\d+(?:\.\d+)?/g) || [];
+    return redondearDinero(terminos.reduce((suma, t) => suma + Number(t), 0));
   }
 
   function previewDisponibleAjustes() {
     const el = document.getElementById('setDisponible');
     const hint = document.getElementById('setDisponibleHint');
     if (!el || !hint) return;
-    const esDelta = /^\s*[+\-−–]/.test(el.value || '');
     const v = leerDisponibleAjustes();
-    hint.textContent = esDelta && Number.isFinite(v)
+    hint.textContent = esCuentaDisponibleAjustes(el) && Number.isFinite(v)
       ? `= S/ ${fmt(v)} (antes S/ ${fmt(Number(el.dataset.base) || 0)})`
       : 'Escribe +50 o −20 para sumar o restar al actual.';
   }
 
   function resolverDisponibleAjustes() {
     const el = document.getElementById('setDisponible');
-    if (!el || !/^\s*[+\-−–]/.test(el.value || '')) return;
+    if (!el || !esCuentaDisponibleAjustes(el)) return;
     const v = leerDisponibleAjustes();
     if (!Number.isFinite(v)) return;
     el.value = v.toFixed(2);

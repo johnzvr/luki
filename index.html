@@ -8570,7 +8570,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
 <div class="toast" id="toast"></div>
 
 <script>
-  const LEDGER_BUILD = '395';
+  const LEDGER_BUILD = '396';
   document.documentElement.dataset.ledgerBuild = LEDGER_BUILD;
 
   const DEFAULT_STATE = {
@@ -22886,7 +22886,8 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
       <p class="modal-sub">Edita cualquier valor. En automático, los bloques se ponderan según sus días restantes.</p>
       <div class="modal-field">
         <label>Total disponible</label>
-        <input type="number" step="0.01" id="setDisponible" value="${state.totalDisponible.toFixed(2)}" oninput="autoRecalcPresupuesto()">
+        <input type="text" autocomplete="off" id="setDisponible" data-base="${state.totalDisponible.toFixed(2)}" value="${state.totalDisponible.toFixed(2)}" oninput="previewDisponibleAjustes(); autoRecalcPresupuesto()" onblur="resolverDisponibleAjustes()">
+        <small id="setDisponibleHint" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-dim);">Escribe +50 o −20 para sumar o restar al actual.</small>
       </div>
       <div class="modal-field">
         <label>Meta de ahorro <span style="color:var(--ink-mute);text-transform:none;letter-spacing:0;font-weight:400;">(0 = sin meta)</span></label>
@@ -23041,8 +23042,42 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     autoRecalcPresupuesto();
   }
   
+  // BUILD396 · Total disponible en Ajustes acepta "+50" / "-20": suma o resta al valor actual.
+  function leerDisponibleAjustes() {
+    const el = document.getElementById('setDisponible');
+    if (!el) return NaN;
+    const txt = String(el.value || '').trim().replace(/\s/g, '').replace(/[−–]/g, '-').replace(',', '.');
+    const m = txt.match(/^([+-])(\d+(?:\.\d+)?)$/);
+    if (m) {
+      const base = Number(el.dataset.base) || 0;
+      return redondearDinero(base + (m[1] === '+' ? 1 : -1) * Number(m[2]));
+    }
+    return /^-?\d+(?:\.\d+)?$/.test(txt) ? Number(txt) : NaN;
+  }
+
+  function previewDisponibleAjustes() {
+    const el = document.getElementById('setDisponible');
+    const hint = document.getElementById('setDisponibleHint');
+    if (!el || !hint) return;
+    const esDelta = /^\s*[+\-−–]/.test(el.value || '');
+    const v = leerDisponibleAjustes();
+    hint.textContent = esDelta && Number.isFinite(v)
+      ? `= S/ ${fmt(v)} (antes S/ ${fmt(Number(el.dataset.base) || 0)})`
+      : 'Escribe +50 o −20 para sumar o restar al actual.';
+  }
+
+  function resolverDisponibleAjustes() {
+    const el = document.getElementById('setDisponible');
+    if (!el || !/^\s*[+\-−–]/.test(el.value || '')) return;
+    const v = leerDisponibleAjustes();
+    if (!Number.isFinite(v)) return;
+    el.value = v.toFixed(2);
+    previewDisponibleAjustes();
+    autoRecalcPresupuesto();
+  }
+
   function autoRecalcPresupuesto() {
-    const disp = parseFloat(document.getElementById('setDisponible').value);
+    const disp = leerDisponibleAjustes();
     const numSem = parseInt(document.getElementById('setNumSem').value);
     const meta = parseFloat(document.getElementById('setMeta').value) || 0;
     if (isNaN(disp) || isNaN(numSem) || numSem < 1 || numSem > 6) return;
@@ -23067,7 +23102,7 @@ body.dark .cycle-start-snapshot .snapshot-card { background: rgba(255,255,255,.0
     const anteriorMeta = Number(state.metaResidual) || 0;
     const modoManualAnterior = !!state.modoManualSemanas;
     const fechaAnterior = state.fechaInicioCiclo ? fechaParaInput(new Date(state.fechaInicioCiclo)) : '';
-    const disp = parseFloat(document.getElementById('setDisponible').value);
+    const disp = leerDisponibleAjustes(); // BUILD396
     const meta = parseFloat(document.getElementById('setMeta').value);
     const intoc = parseFloat(document.getElementById('setIntocable').value);
     const deuda = parseFloat(document.getElementById('setDeuda').value);
